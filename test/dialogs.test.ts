@@ -12,6 +12,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { buildDialog, dialogCommands, initialValues, validateDialog, type DialogKind, type DialogTarget, type DialogValues } from "@/dialogs"
 import { readOperation, readRepository, runGit } from "@/git"
 
+Object.assign(process.env, { GIT_AUTHOR_NAME: "Ada", GIT_AUTHOR_EMAIL: "ada@example.com", GIT_COMMITTER_NAME: "Ada", GIT_COMMITTER_EMAIL: "ada@example.com" })
+
 let root: string
 let repository: string
 let remote: string
