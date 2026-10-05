@@ -6,6 +6,8 @@
 import { describe, expect, it } from "vitest"
 import { layoutGraph } from "@/graph"
 import { drawCells } from "@/lanes"
+import { DEFAULT_COLUMNS } from "./columns"
+import { graphWidth } from "@/ui/log"
 
 const commit = (hash: string, ...parents: string[]) => ({ hash, parents })
 
@@ -52,5 +54,25 @@ describe("drawCells", () => {
   it("draws a fork with a closing corner", () => {
     const rows = layoutGraph([commit("m", "a", "f"), commit("f", "a"), commit("a")])
     expect(drawCells(rows[2], "head").map(cell => cell.char).join("").trimEnd()).toBe("◉─╯")
+  })
+})
+
+describe("graphWidth", () => {
+  /** The column fits the rows in view: one lane needs three cells, never less than four. */
+  it("fits the lanes of the visible rows", () => {
+    const rows = layoutGraph([commit("c", "b"), commit("b", "a"), commit("a")])
+    expect(graphWidth(rows, DEFAULT_COLUMNS)).toBe(4)
+  })
+
+  /** A burst of parallel branches outside the view does not widen the column for the rows on screen. */
+  it("ignores lanes of rows out of view", () => {
+    const wide = layoutGraph([commit("o", "a", "b", "c", "d", "e"), commit("e", "a"), commit("d", "a"), commit("c", "a"), commit("b", "a"), commit("a", "z"), commit("z")])
+    expect(graphWidth(wide.slice(0, 1), DEFAULT_COLUMNS)).toBe(11)
+    expect(graphWidth(wide.slice(6), DEFAULT_COLUMNS)).toBe(4)
+  })
+
+  /** A width set by dragging the divider wins over the computed one. */
+  it("keeps a dragged width", () => {
+    expect(graphWidth(layoutGraph([commit("a")]), { ...DEFAULT_COLUMNS, graph: 17 })).toBe(17)
   })
 })

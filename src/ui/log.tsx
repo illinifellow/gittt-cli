@@ -38,12 +38,24 @@ export const badgeColor = (badge: Badge, palette: Palette) => ({ branch: badge.c
 export const partColor = (part: MessagePart, palette: Palette) => ({ text: undefined, emoji: undefined, code: palette.tag, shortcode: palette.textMuted, url: palette.accent, prefix: palette.accent, quoted: palette.tag, issue: palette.remote, hash: palette.head })[part.kind]
 
 /**
- * @param rows graph rows of the loaded log
- * @param columns configured widths
+ * @param rows graph rows of the rows in view
+ * @param columns configured widths; a width set by dragging wins
  * @param compact one cell per lane instead of two
- * @returns the graph column width in cells: configured, or what the first 400 rows need
+ * @returns the graph column width in cells: configured, or what the visible rows need plus one cell, between 4 and 30
  */
-export const graphWidth = (rows: GraphRow[], columns: Config["columns"], compact = false) => columns.graph ?? Math.min(30, Math.max(compact ? 4 : 6, Math.max(1, ...rows.slice(0, 400).map(row => row.width)) * (compact ? 1 : 2) + 1))
+export const graphWidth = (rows: GraphRow[], columns: Config["columns"], compact = false) => columns.graph ?? Math.min(30, Math.max(4, Math.max(1, ...rows.map(row => row.width)) * (compact ? 1 : 2) + 1))
+
+/**
+ * @param cursor selected row
+ * @param total row count
+ * @param height pane height, header included
+ * @returns the first and one-past-last index of the rows the log shows
+ */
+export const visibleRange = (cursor: number, total: number, height: number) => {
+  const listHeight = Math.max(1, height - 1)
+  const start = windowStart(cursor, total, listHeight, 1 / 3)
+  return { start, end: start + listHeight }
+}
 
 /**
  * @param width pane width
@@ -100,10 +112,10 @@ export const LogPane = ({ entries, rows, cursor, width, height, focused, headHas
   palette: Palette
   events: LogEvents
 }) => {
-  const graph = graphWidth(rows, columns, settings.compact)
+  const { start, end } = visibleRange(cursor, entries.length, height)
+  const listHeight = end - start
+  const graph = graphWidth(rows.slice(start, end), columns, settings.compact)
   const description = descriptionWidth(width, graph, columns)
-  const listHeight = Math.max(1, height - 1)
-  const start = windowStart(cursor, entries.length, listHeight, 1 / 3)
   const headerColumns: [string, number, LogColumn | null][] = [["Graph", graph, "graph"], ["Description", description, "description"], ["Commit", columns.hash, "hash"], ["Author", columns.author, "author"], ["Date", columns.date, null]]
   const headerGround = mix(palette.text, palette.background, 0.06)
   return (

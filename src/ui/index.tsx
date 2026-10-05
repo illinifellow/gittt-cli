@@ -24,7 +24,7 @@ import { DiffPane, FilesPane, diffLines, filesOf, gutterWidth, lineText, selecte
 import type { MouseEvent } from "@/mouse"
 import { Clickable } from "@/mouse/regions"
 import { DialogBox, dialogActivate, dialogKey, openDialogState, type DialogState } from "./dialog"
-import { LogPane, descriptionWidth, graphWidth, type LogColumn, type LogEvents } from "./log"
+import { LogPane, descriptionWidth, graphWidth, visibleRange, type LogColumn, type LogEvents } from "./log"
 import { MenuBox, type MenuItem, type MenuState } from "./menu"
 import { terminalBackground } from "@/terminal"
 import { fit, mix, paletteOf } from "./text"
@@ -505,7 +505,8 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   const clampLog = (value: number) => Math.max(0, Math.min(log.entries.length - 1, value))
   const clampFiles = (value: number) => Math.max(0, Math.min(fileRowsList.length - 1, value))
   const clampDiff = (value: number) => Math.max(0, Math.min(lines.length - 1, value))
-  const graph = graphWidth(log.rows, config.columns, settings.compact)
+  const shownRows = visibleRange(logCursor, log.entries.length, logHeight)
+  const graph = graphWidth(log.rows.slice(shownRows.start, shownRows.end), config.columns, settings.compact)
   const description = descriptionWidth(mainWidth, graph, config.columns)
 
   const commitAction = () => setStatus({ text: "Commit: stage and commit in VS Code Source Control or with git commit", error: false })
