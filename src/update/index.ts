@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url"
 /** The repository whose releases are checked and installed. */
 export const UPDATE_REPOSITORY = "illinifellow/gittt-cli"
 
-/** The package root of the running bundle: `dist/cli.js` lives one folder below it. */
+/** The package root of the running bundle: `dist/app.js` lives one folder below it. */
 const packageRoot = () => dirname(dirname(realpathSync(fileURLToPath(import.meta.url))))
 
 /** @returns the version in the running package's package.json, or "0.0.0" when it cannot be read */
