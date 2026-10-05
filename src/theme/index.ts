@@ -8,6 +8,7 @@
 
 /** Colours, as `#rrggbb`. */
 export interface ColorTokens {
+  /** The screen's ground; `transparent` leaves the terminal's own background showing. */
   background: string
   text: string
   textMuted: string
@@ -101,6 +102,8 @@ export interface Theme {
   spacing: SpacingTokens
   /** Code highlighting in diffs: `vscode` follows the editor's theme, any other value names a bundled shiki theme. */
   syntax: string
+  /** What the screen paints behind everything: the theme's background, or `undefined` for a transparent one. */
+  surface: string | undefined
 }
 
 /** Partial overrides of a theme, as stored in the config. */
@@ -113,6 +116,12 @@ export interface ThemeOverrides {
 
 /** The theme used on dark terminals and when a named theme does not exist. */
 export const DEFAULT_THEME = "golden-brown"
+
+/** The `background` value that leaves the terminal's own background showing. */
+export const TRANSPARENT = "transparent"
+
+/** The ground tints are mixed with under a transparent theme when the terminal does not say its background. */
+const FALLBACK_GROUND = "#000000"
 
 /** The theme `auto` picks on light terminals. */
 export const LIGHT_THEME = "milk-and-honey"
@@ -133,17 +142,20 @@ export const autoTheme = (background: string | undefined) => background && lumin
 /**
  * Builds the active theme from the configuration.
  * @param config themes, icon sets, overrides and settings (`theme`, `icons`)
- * @param background the terminal background; only `auto` uses it, to choose the theme
- * @returns the theme components draw with; a theme name missing from `themes` falls back to the default theme
+ * @param background the terminal background; `auto` chooses the theme by it, and a transparent theme mixes its tints with it
+ * @returns the theme components draw with; a theme name missing from `themes` falls back to the default theme. Under a transparent background `colors.background` is the terminal's (black when unknown), which opaque overlays such as dialogs paint, and `surface` is `undefined`
  */
 export const resolveTheme = (config: Pick<Config, "themes" | "iconSets" | "tokens"> & { settings: { theme: string; icons: string } }, background: string | undefined): Theme => {
   const name = config.settings.theme === "auto" ? autoTheme(background) : config.settings.theme
   const theme = (config.themes[name] ?? config.themes[DEFAULT_THEME]) as Theme
   const overrides = config.tokens
+  const colors = { ...theme.colors, ...overrides.colors }
+  const transparent = colors.background === TRANSPARENT
   return {
-    colors: { ...theme.colors, ...overrides.colors },
+    colors: transparent ? { ...colors, background: background ?? FALLBACK_GROUND } : colors,
     glyphs: { ...theme.glyphs, ...config.iconSets[config.settings.icons], ...overrides.glyphs },
     spacing: { ...theme.spacing, ...overrides.spacing },
     syntax: overrides.syntax ?? theme.syntax,
+    surface: transparent ? undefined : colors.background,
   }
 }

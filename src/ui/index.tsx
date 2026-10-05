@@ -726,7 +726,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
 
   return (
     <ThemeProvider value={theme}>
-    <Box flexDirection="column" width={width} height={height} backgroundColor={palette.background}>
+    <Box flexDirection="column" width={width} height={height} backgroundColor={theme.surface}>
       <Box height={1} width={width} overflow="hidden">
         <Text color={palette.accent} bold>{" gittt   "}</Text>
         {TOOLS.map(tool => (

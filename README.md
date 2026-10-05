@@ -170,7 +170,7 @@ The two are merged on start. Toggles and drags in the app write the user file; i
 
 ### Themes
 
-Two themes ship: **golden-brown** (dark, warm orange on brown-tinted grounds) and **milk-and-honey** (light, warm milky grounds with an amber accent). `settings.theme` is `auto` by default: gittt asks the terminal for its background and picks milk-and-honey on a light one and golden-brown otherwise. Each theme paints its own background and names its code highlighting in `syntax`: `vscode` for the editor's theme, or a bundled theme such as `light-plus`. A theme of your own is another entry under `themes`; anything it leaves out comes from the shipped themes.
+Two themes ship: **golden-brown** (dark, warm orange on brown-tinted grounds) and **milk-and-honey** (light, warm milky grounds with an amber accent). `settings.theme` is `auto` by default: gittt asks the terminal for its background and picks milk-and-honey on a light one and golden-brown otherwise. golden-brown is drawn on the terminal's own background (its `background` is `transparent`); milk-and-honey paints its milky ground so it stays readable on any terminal. Each theme names its code highlighting in `syntax`: `vscode` for the editor's theme, or a bundled theme such as `light-plus`. A theme of your own is another entry under `themes`; anything it leaves out comes from the shipped themes.
 
 - `colors`: background, text, muted text, borders, accent, selections, header and field grounds, branch, current branch, remote, tag, HEAD, stash, file states, diff grounds, label and pill colours, and `lanes` (the graph palette).
 - `glyphs`: every icon, mark and graph character (nodes, lines, corners, checkboxes, radio buttons, folders, file states).

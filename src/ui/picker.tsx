@@ -37,7 +37,7 @@ const complete = (typed: string) => {
  * @param props.width screen width in cells
  */
 export const FolderPicker = ({ initial, recent, onPick, width }: { initial: string; recent: string[]; onPick: (folder: string) => void; width: number }) => {
-  const { colors: palette, glyphs } = useTheme()
+  const { colors: palette, glyphs, surface } = useTheme()
   const { exit } = useApp()
   const [value, setValue] = useState(initial)
   const [cursor, setCursor] = useState(-1)
@@ -80,10 +80,10 @@ export const FolderPicker = ({ initial, recent, onPick, width }: { initial: stri
   }, [])
   const boxWidth = Math.min(90, width - 4)
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1} width={width} minHeight={process.stdout.rows ?? 24} backgroundColor={palette.background}>
+    <Box flexDirection="column" paddingX={2} paddingY={1} width={width} minHeight={process.stdout.rows ?? 24} backgroundColor={surface}>
       <Text color={palette.accent} bold>gittt</Text>
       <Text color={palette.text}>Where should gittt look for repositories?</Text>
-      <Box borderStyle="round" borderColor={palette.accent} borderBackgroundColor={palette.background} backgroundColor={palette.background} width={boxWidth} marginTop={1}>
+      <Box borderStyle="round" borderColor={palette.accent} borderBackgroundColor={surface} backgroundColor={surface} width={boxWidth} marginTop={1}>
         <Text color={palette.text}>{fit(`${value}${glyphs.cursor}`, boxWidth - 2)}</Text>
       </Box>
       {error ? <Text color={palette.stash}>{glyphs.error} {error}</Text> : null}
