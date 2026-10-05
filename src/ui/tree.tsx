@@ -11,7 +11,7 @@ import { Clickable } from "@/mouse/regions"
 import type { Repository } from "@/protocol"
 import type { KeyBindings } from "@/config"
 import type { GlyphTokens } from "@/theme"
-import { fit, mix, slide, widthOf, type Palette } from "./text"
+import { fit, slide, widthOf, type Palette } from "./text"
 import { useTheme } from "./theme"
 import { windowStart } from "./window"
 
@@ -205,7 +205,7 @@ export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, 
                 {(node.meta ?? []).map((part, partIndex) => (
                   <Text key={partIndex}>
                     <Text> </Text>
-                    {part.pill ? <Text backgroundColor={mix(part.color, palette.background, palette.labelGround)} color={part.color} bold>{` ${part.text} `}</Text> : <Text color={part.color}>{part.text}</Text>}
+                    {part.pill ? <Text backgroundColor={part.color} color={palette.pillText} bold>{` ${part.text} `}</Text> : <Text color={part.color}>{part.text}</Text>}
                   </Text>
                 ))}
                 <Text> </Text>
