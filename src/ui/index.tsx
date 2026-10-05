@@ -22,7 +22,7 @@ import { DiffPane, FilesPane, diffLines, fileViewLines, filesOf, gutterWidth, li
 import type { MouseEvent } from "@/mouse"
 import { Clickable } from "@/mouse/regions"
 import { DialogBox, dialogActivate, dialogKey, openDialogState, type DialogState } from "./dialog"
-import { LogPane, descriptionWidth, graphWidth, visibleRange, type LogColumn, type LogEvents } from "./log"
+import { LogPane, graphWidth, visibleRange, type LogColumn, type LogEvents } from "./log"
 import { MenuBox, type MenuItem, type MenuState } from "./menu"
 import { terminalBackground } from "@/terminal"
 import { resolveTheme } from "@/theme"
@@ -50,6 +50,9 @@ const toClipboard = (text: string) => {
  * The main screen.
  * @param props.store the catalogue of the chosen folder
  */
+/** The column each log divider right of the graph resizes. */
+const COLUMN_AFTER = { description: "hash", hash: "author", author: "date" } as const
+
 export const App = ({ store }: { store: RepositoryStore }) => {
   const { exit } = useApp()
   const { columns: screenWidth, rows: screenHeight } = useWindowSize()
@@ -544,7 +547,6 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   const clampDiff = (value: number) => Math.max(0, Math.min(lines.length - 1, value))
   const shownRows = visibleRange(logCursor, log.entries.length, logHeight)
   const graph = graphWidth(log.rows.slice(shownRows.start, shownRows.end), config.columns, settings.compact)
-  const description = descriptionWidth(mainWidth, graph, config.columns)
 
   const commitAction = () => openDialog("commit")
   const TOOLS: { label: string; key: string; count?: number; run: () => void }[] = [
@@ -572,12 +574,13 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   const detailsDivider = divider(event => updateConfig(draft => { draft.columns.details = Math.max(3, Math.min(bodyHeight - 6, height - 2 - event.y)) }))
   const filesDivider = divider(event => updateConfig(draft => { draft.columns.files = Math.max(12, Math.min(mainWidth - 20, event.x - treeWidth)) }))
   const columnDivider = (column: LogColumn, start: MouseEvent) => {
-    const initial = { graph, description, hash: config.columns.hash, author: config.columns.author }
+    const initial = { graph, hash: config.columns.hash, author: config.columns.author, date: config.columns.date }
     return (event: MouseEvent) => updateConfig(draft => {
       const delta = event.x - start.x
-      if (column === "graph") draft.columns.graph = Math.max(3, Math.min(80, initial.graph + delta))
-      else if (column === "description") draft.columns.hash = Math.max(4, Math.min(60, initial.hash - delta))
-      else draft.columns[column] = Math.max(4, Math.min(80, initial[column] + delta))
+      if (column === "graph") return void (draft.columns.graph = Math.max(3, Math.min(80, initial.graph + delta)))
+      // Right of the description the columns hang from the pane's right edge: each divider sizes the column after it.
+      const after = COLUMN_AFTER[column]
+      draft.columns[after] = Math.max(4, Math.min(80, initial[after] - delta))
     })
   }
 
