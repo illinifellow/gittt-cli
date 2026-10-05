@@ -8,7 +8,7 @@ import { layoutGraph } from "@/graph"
 import { loadDefaults } from "@/config"
 import { drawCells } from "@/lanes"
 
-const GRAPH = loadDefaults().themes.dark.glyphs!.graph!
+const GRAPH = loadDefaults().themes["golden-brown"].glyphs!.graph!
 import { DEFAULT_COLUMNS } from "./columns"
 import { graphWidth } from "@/ui/log"
 

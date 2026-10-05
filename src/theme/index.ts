@@ -106,6 +106,9 @@ export interface ThemeOverrides {
   spacing?: Partial<SpacingTokens>
 }
 
+/** The theme used on dark terminals and when a named theme does not exist. */
+export const DEFAULT_THEME = "golden-brown"
+
 /** Luminance of a `#rrggbb` colour, 0 (black) to 1 (white). */
 const luminance = (color: string) => {
   const [red, green, blue] = [1, 3, 5].map(index => parseInt(color.slice(index, index + 2), 16) / 255)
@@ -115,19 +118,19 @@ const luminance = (color: string) => {
 /**
  * Picks the theme name for `auto`.
  * @param background the terminal background, if it answered
- * @returns `light` on a light background, `dark` otherwise
+ * @returns `light` on a light background, the default theme otherwise
  */
-export const autoTheme = (background: string | undefined) => background && luminance(background) > 0.5 ? "light" : "dark"
+export const autoTheme = (background: string | undefined) => background && luminance(background) > 0.5 ? "light" : DEFAULT_THEME
 
 /**
  * Builds the active theme from the configuration.
  * @param config themes, icon sets, overrides and settings (`theme`, `icons`)
  * @param background the terminal background; in `auto` it chooses the theme, and it always becomes `colors.background`
- * @returns the theme components draw with; a theme name missing from `themes` falls back to `dark`
+ * @returns the theme components draw with; a theme name missing from `themes` falls back to the default theme
  */
 export const resolveTheme = (config: Pick<Config, "themes" | "iconSets" | "tokens"> & { settings: { theme: string; icons: string } }, background: string | undefined): Theme => {
   const name = config.settings.theme === "auto" ? autoTheme(background) : config.settings.theme
-  const theme = (config.themes[name] ?? config.themes.dark) as Theme
+  const theme = (config.themes[name] ?? config.themes[DEFAULT_THEME]) as Theme
   const overrides = config.tokens
   const colors = { ...theme.colors, ...overrides.colors }
   return {
