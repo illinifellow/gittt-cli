@@ -16,19 +16,24 @@ import { splitMessage, type MessagePart } from "@/message"
 import type { MouseEvent } from "@/mouse"
 import { Clickable } from "@/mouse/regions"
 import { WORKING_TREE, type ViewSettings } from "@/protocol"
-import { ICONS } from "./icons"
+import type { GlyphTokens } from "@/theme"
 import { fit, mix, slide, widthOf, type Palette } from "./text"
+import { useTheme } from "./theme"
 import { windowStart } from "./window"
 
-/** Nerd Font octicons: git-branch, cloud, tag, git-commit, sync, alert. */
-export const BADGE_GLYPHS: Record<Badge["kind"], string> = { branch: `${ICONS.branch} `, remote: `${ICONS.remote} `, tag: `${ICONS.tag} `, head: `${ICONS.commit} `, operation: `${ICONS.sync} `, conflict: `${ICONS.alert} ` }
+/**
+ * @param badge a ref label
+ * @param glyphs the theme's icons
+ * @returns the icon and space in front of the label's name
+ */
+export const badgeGlyph = (badge: Badge, glyphs: GlyphTokens) => `${{ branch: glyphs.branch, remote: glyphs.remote, tag: glyphs.tag, head: glyphs.commit, operation: glyphs.sync, conflict: glyphs.alert }[badge.kind]} `
 
 /**
  * @param badge a ref label
  * @param palette colours
- * @returns its colour: current branch green, other branches accent, remotes, tags, HEAD and states their own
+ * @returns its colour: the current branch, other branches, remotes, tags, HEAD and states each their own token
  */
-export const badgeColor = (badge: Badge, palette: Palette) => ({ branch: badge.current ? palette.head : palette.branch, remote: palette.remote, tag: palette.tag, head: palette.stash, operation: palette.tag, conflict: palette.stash })[badge.kind]
+export const badgeColor = (badge: Badge, palette: Palette) => ({ branch: badge.current ? palette.currentBranch : palette.branch, remote: palette.remote, tag: palette.tag, head: palette.stash, operation: palette.tag, conflict: palette.stash })[badge.kind]
 
 /**
  * @param part a piece of a commit message
@@ -92,10 +97,9 @@ export interface LogEvents {
  * @param props.query the search text; non-matching rows dim while it is set
  * @param props.truncated whether more commits exist than were loaded
  * @param props.scrollX cells the description scrolled sideways
- * @param props.palette colours
  * @param props.events row clicks, hash clicks, wheel and divider drags
  */
-export const LogPane = ({ entries, rows, cursor, width, height, focused, headHash, settings, columns, found, query, truncated, scrollX, palette, events }: {
+export const LogPane = ({ entries, rows, cursor, width, height, focused, headHash, settings, columns, found, query, truncated, scrollX, events }: {
   entries: LogEntry[]
   rows: GraphRow[]
   cursor: number
@@ -109,15 +113,15 @@ export const LogPane = ({ entries, rows, cursor, width, height, focused, headHas
   query: string
   truncated: boolean
   scrollX: number
-  palette: Palette
   events: LogEvents
 }) => {
+  const { colors: palette, glyphs } = useTheme()
   const { start, end } = visibleRange(cursor, entries.length, height)
   const listHeight = end - start
   const graph = graphWidth(rows.slice(start, end), columns, settings.compact)
   const description = descriptionWidth(width, graph, columns)
   const headerColumns: [string, number, LogColumn | null][] = [["Graph", graph, "graph"], ["Description", description, "description"], ["Commit", columns.hash, "hash"], ["Author", columns.author, "author"], ["Date", columns.date, null]]
-  const headerGround = mix(palette.text, palette.background, 0.06)
+  const headerGround = palette.header
   return (
     <Clickable flexDirection="column" width={width} height={height} onWheel={events.onWheel}>
       <Box height={1} overflow="hidden">
@@ -126,7 +130,7 @@ export const LogPane = ({ entries, rows, cursor, width, height, focused, headHas
             <Text backgroundColor={headerGround} color={focused ? palette.text : palette.textMuted} bold>{fit(` ${label}`, column ? size : Math.max(1, size))}</Text>
             {column ? (
               <Clickable onPress={event => events.onColumnPress(column, event)}>
-                <Text backgroundColor={headerGround} color={palette.textMuted}>│</Text>
+                <Text backgroundColor={headerGround} color={palette.textMuted}>{glyphs.divider}</Text>
               </Clickable>
             ) : null}
           </Box>
@@ -137,9 +141,9 @@ export const LogPane = ({ entries, rows, cursor, width, height, focused, headHas
         const index = start + offset
         const working = entry.hash === WORKING_TREE
         const selected = index === cursor
-        const background = selected ? (focused ? palette.selection : palette.border) : undefined
+        const background = selected ? (focused ? palette.selection : palette.selectionInactive) : undefined
         const dimmed = Boolean(query) && !found.has(index)
-        const drawn = drawCells(rows[index], working ? "working" : entry.hash === headHash ? "head" : "plain")
+        const drawn = drawCells(rows[index], working ? "working" : entry.hash === headHash ? "head" : "plain", glyphs.graph)
         const cells = (settings.compact ? drawn.filter((_, cell) => cell % 2 === 0) : drawn).slice(0, graph)
         const parts = working ? [{ kind: "text" as const, text: entry.subject }] : splitMessage(entry.subject, settings.gitmoji)
         let skip = scrollX
@@ -154,7 +158,7 @@ export const LogPane = ({ entries, rows, cursor, width, height, focused, headHas
           pieces.push(draw(piece))
         }
         entry.badges.forEach((badge, badgeIndex) => {
-          place(` ${BADGE_GLYPHS[badge.kind]}${badge.name} `, piece => <Text key={`badge${badgeIndex}`} backgroundColor={mix(badgeColor(badge, palette), palette.background, 0.32)} color={badgeColor(badge, palette)} bold={badge.current || badge.kind === "head"}>{piece}</Text>)
+          place(` ${badgeGlyph(badge, glyphs)}${badge.name} `, piece => <Text key={`badge${badgeIndex}`} backgroundColor={mix(badgeColor(badge, palette), palette.background, palette.labelGround)} color={badgeColor(badge, palette)} bold={badge.current || badge.kind === "head"}>{piece}</Text>)
           place(" ", piece => <Text key={`gap${badgeIndex}`}>{piece}</Text>)
         })
         parts.forEach((part, partIndex) => place(part.text, piece => <Text key={`part${partIndex}`} color={working ? palette.textMuted : partColor(part, palette) ?? palette.text} italic={working} bold={part.kind === "prefix"} underline={Boolean(query) && found.has(index)}>{piece}</Text>))
@@ -174,7 +178,7 @@ export const LogPane = ({ entries, rows, cursor, width, height, focused, headHas
           </Clickable>
         )
       })}
-      {truncated && start + listHeight >= entries.length ? <Text color={palette.textMuted}>{fit("  … more commits than maxCommits", width)}</Text> : null}
+      {truncated && start + listHeight >= entries.length ? <Text color={palette.textMuted}>{fit("  more commits than maxCommits", width)}</Text> : null}
     </Clickable>
   )
 }

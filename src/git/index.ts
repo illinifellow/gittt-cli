@@ -11,7 +11,6 @@ import { WORKING_TREE, type Branch, type ChangedFile, type Commit, type CommitDe
 const UNIT = "\x1f"
 const RECORD = "\x1e"
 const MAX_BUFFER = 256 * 1024 * 1024
-const MAX_DIFF_LENGTH = 600 * 1024
 
 /**
  * Runs git and resolves with its standard output.
@@ -225,9 +224,10 @@ export const readDetails = async (path: string, hash: string): Promise<CommitDet
  * @param path repository root
  * @param hash commit hash or `WORKING_TREE`
  * @param file the changed file; renames diff both paths
- * @returns unified diff text, cut at 600 KB with a closing note
+ * @param maxKilobytes longer diffs are cut there with a closing note
+ * @returns unified diff text
  */
-export const readDiff = async (path: string, hash: string, file: ChangedFile) => {
+export const readDiff = async (path: string, hash: string, file: ChangedFile, maxKilobytes: number) => {
   const paths = file.previousPath ? [file.previousPath, file.path] : [file.path]
   let text: string
   if (hash === WORKING_TREE) {
@@ -242,5 +242,6 @@ export const readDiff = async (path: string, hash: string, file: ChangedFile) =>
       ? await runGit(path, ["diff", "-M", parent, hash, "--", ...paths])
       : await runGit(path, ["show", "--format=", "-M", hash, "--", ...paths])
   }
-  return text.length > MAX_DIFF_LENGTH ? `${text.slice(0, MAX_DIFF_LENGTH)}\n\\ diff cut at ${MAX_DIFF_LENGTH / 1024} KB` : text
+  const maxLength = maxKilobytes * 1024
+  return text.length > maxLength ? `${text.slice(0, maxLength)}\n\\ diff cut at ${maxKilobytes} KB` : text
 }

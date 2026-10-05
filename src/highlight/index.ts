@@ -7,6 +7,7 @@
 import { createHighlighterCore, type GrammarState, type ThemeRegistrationAny } from "shiki/core"
 import { createJavaScriptRegexEngine } from "shiki/engine/javascript"
 import { bundledLanguages, bundledLanguagesInfo } from "shiki/langs"
+import type { Limits } from "@/config"
 import { prefixWidth, type ParsedDiff } from "@/diff"
 
 /** A coloured piece of a line. */
@@ -19,9 +20,6 @@ export interface Segment {
 }
 
 const THEME_NAME = "gittt-editor"
-const MAX_HIGHLIGHT_LINES = 40000
-const CHUNK_LINES = 300
-const CACHE_SIZE = 24
 const FILE_NAMES: Record<string, string> = { dockerfile: "docker", makefile: "make", gemfile: "ruby", rakefile: "ruby", ".gitignore": "ini", ".npmrc": "ini", ".bashrc": "shellscript", ".zshrc": "shellscript" }
 const EXTENSIONS: Record<string, string> = { mjs: "javascript", cjs: "javascript", mts: "typescript", cts: "typescript", yml: "yaml", h: "c", hpp: "cpp", cc: "cpp", plist: "xml", svg: "xml", txt: "" }
 
@@ -48,8 +46,11 @@ const languageOf = (path: string) => {
 export class DiffHighlighter {
   private highlighter: ReturnType<typeof createHighlighterCore> | null = null
 
-  /** @param theme a VS Code theme JSON */
-  constructor(private readonly theme: Promise<ThemeRegistrationAny>) {}
+  /**
+   * @param theme a VS Code theme JSON
+   * @param limits `highlightMaxLines` (longer diffs stay plain), `highlightChunkLines` (lines per piece), `highlightCacheSize` (diffs remembered)
+   */
+  constructor(private readonly theme: Promise<ThemeRegistrationAny>, private readonly limits: Pick<Limits, "highlightMaxLines" | "highlightChunkLines" | "highlightCacheSize">) {}
 
   private async core() {
     this.highlighter ??= this.theme.then(theme => createHighlighterCore({ themes: [{ ...theme, name: THEME_NAME }], langs: [], engine: createJavaScriptRegexEngine({ forgiving: true }) }))
@@ -83,7 +84,7 @@ export class DiffHighlighter {
     const language = languageOf(path)
     if (!language || !(language in bundledLanguages)) return null
     const lineCount = diff.hunks.reduce((total, hunk) => total + hunk.lines.length, 0)
-    if (!lineCount || lineCount > MAX_HIGHLIGHT_LINES) return null
+    if (!lineCount || lineCount > this.limits.highlightMaxLines) return null
     const highlighter = await this.core()
     if (!highlighter.getLoadedLanguages().includes(language)) await highlighter.loadLanguage(bundledLanguages[language as keyof typeof bundledLanguages])
     const width = prefixWidth(diff)
@@ -104,8 +105,8 @@ export class DiffHighlighter {
     for (const entry of hunks)
       for (const side of ["new", "old"] as const) {
         let state: GrammarState | undefined
-        for (let start = 0; start < entry.sides[side].length; start += CHUNK_LINES) {
-          const tokens = highlighter.codeToTokensBase(entry.sides[side].slice(start, start + CHUNK_LINES).join("\n"), { lang: language, theme: THEME_NAME, grammarState: state })
+        for (let start = 0; start < entry.sides[side].length; start += this.limits.highlightChunkLines) {
+          const tokens = highlighter.codeToTokensBase(entry.sides[side].slice(start, start + this.limits.highlightChunkLines).join("\n"), { lang: language, theme: THEME_NAME, grammarState: state })
           state = highlighter.getLastGrammarState(tokens)
           entry.tokens[side].push(...this.toSegments(tokens))
           onProgress?.(assemble())
@@ -114,7 +115,7 @@ export class DiffHighlighter {
       }
     const result = assemble()
     this.cache.set(key, result)
-    if (this.cache.size > CACHE_SIZE) this.cache.delete(this.cache.keys().next().value as string)
+    if (this.cache.size > this.limits.highlightCacheSize) this.cache.delete(this.cache.keys().next().value as string)
     return result
   }
 }

@@ -8,14 +8,11 @@
 import { watch, type FSWatcher } from "node:fs"
 import { stat } from "node:fs/promises"
 import { join } from "node:path"
-import { loadConfig, saveConfig, type Catalog } from "@/config"
+import { loadConfig, loadState, saveState, type Catalog } from "@/config"
 import { readRepository, runGit } from "@/git"
 import type { Repository } from "@/protocol"
 import { findRepositories } from "@/scan"
 
-const REFRESH_DELAY = 350
-/** Changes that never alter what gittt shows: object storage, reflogs, dependencies and build output. */
-const IGNORED_CHANGES = /(^|\/)(\.git\/objects|node_modules|\.next|dist|build|out)(\/|$)/
 
 /** Repository summaries for one folder, with change notifications. */
 export class RepositoryStore {
@@ -43,14 +40,14 @@ export class RepositoryStore {
   }
 
   private get catalog(): Catalog {
-    const stored: Partial<Catalog> = loadConfig().catalogs[this.root] ?? {}
+    const stored: Partial<Catalog> = loadState().catalogs[this.root] ?? {}
     return { order: stored.order ?? [], hidden: stored.hidden ?? [], added: stored.added ?? [] }
   }
 
   private saveCatalog(change: Partial<Catalog>) {
-    const config = loadConfig()
-    config.catalogs[this.root] = { ...this.catalog, ...change }
-    saveConfig(config)
+    const state = loadState()
+    state.catalogs[this.root] = { ...this.catalog, ...change }
+    saveState(state)
   }
 
   private sortByOrder<Item>(items: Item[], pathOf: (item: Item) => string) {
@@ -73,11 +70,13 @@ export class RepositoryStore {
     const extra = (await Promise.all(added.map(async path => (await stat(join(path, ".git")).catch(() => null)) ? path : null)))
       .filter((path): path is string => path !== null && !scanned.includes(path))
     this.found = this.sortByOrder([...scanned, ...extra].filter(path => !hidden.includes(path)), path => path)
+    const ignoredPaths = loadConfig().limits.watchIgnore
+    const ignored = (file: string) => ignoredPaths.some(prefix => file === prefix || file.startsWith(`${prefix}/`) || file.includes(`/${prefix}/`))
     this.watchers.forEach(watcher => watcher.close())
     this.watchers = this.found.flatMap(path => {
       try {
         return [watch(path, { recursive: true }, (_event, file) => {
-          if (file && !IGNORED_CHANGES.test(String(file))) this.schedule(path)
+          if (file && !ignored(String(file))) this.schedule(path)
         })]
       } catch {
         return []
@@ -144,7 +143,7 @@ export class RepositoryStore {
     this.timers.set(path, setTimeout(() => {
       this.timers.delete(path)
       void this.refresh(path)
-    }, REFRESH_DELAY))
+    }, loadConfig().limits.refreshDelayMs))
   }
 
   /** Stops watching. */

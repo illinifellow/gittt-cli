@@ -49,7 +49,7 @@ const rectangleOf = (element: DOMElement) => {
  * A box that answers the mouse. One-row boxes clip what does not fit instead of wrapping onto a second row.
  * @param props.children what the box holds
  * @param props.onClick a left click, or a press on an `onPress` target released without moving
- * @param props.onDoubleClick a second left press on the same cell within 400 ms
+ * @param props.onDoubleClick a second left press on the same cell within `limits.doubleClickMs`
  * @param props.onRightClick a right press
  * @param props.onWheel wheel or trackpad scrolling over the box
  * @param props.onPress a left press; may return the drag handler

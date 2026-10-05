@@ -11,37 +11,38 @@ import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { render, useWindowSize } from "ink"
 import { useState } from "react"
-import { loadConfig, saveConfig } from "@/config"
+import { loadConfig, loadState, saveState } from "@/config"
 import { mouse, startMouse } from "@/mouse"
 import { dispatchMouse } from "@/mouse/regions"
 import { RepositoryStore } from "@/store"
 import { queryBackground, terminalBackground } from "@/terminal"
 import { App } from "@/ui"
 import { FolderPicker } from "@/ui/picker"
-import { paletteOf } from "@/ui/text"
+import { resolveTheme } from "@/theme"
+import { ThemeProvider } from "@/ui/theme"
 
 const Root = ({ initial, resumed }: { initial: string; resumed: boolean }) => {
   const [store, setStore] = useState<RepositoryStore | null>(() => resumed ? new RepositoryStore(initial) : null)
   const { columns } = useWindowSize()
-  const config = loadConfig()
   if (store) return <App store={store} />
   return (
-    <FolderPicker initial={initial} recent={config.recent} width={columns} palette={paletteOf(config.tokens, terminalBackground())} onPick={folder => {
-      const next = loadConfig()
-      next.recent = [folder, ...next.recent.filter(path => path !== folder)].slice(0, 12)
-      saveConfig(next)
+    <ThemeProvider value={resolveTheme(loadConfig(), terminalBackground())}>
+    <FolderPicker initial={initial} recent={loadState().recent} width={columns} onPick={folder => {
+      const state = loadState()
+      saveState({ ...state, recent: [folder, ...state.recent.filter(path => path !== folder)].slice(0, loadConfig().limits.recentFolders) })
       process.env.GITTT_FOLDER = folder
       setStore(new RepositoryStore(folder))
     }} />
+    </ThemeProvider>
   )
 }
 
 const ENTER_ALTERNATE_SCREEN = "\x1b[?1049h\x1b[H"
 const LEAVE_ALTERNATE_SCREEN = "\x1b[?1049l"
 
-await queryBackground()
+await queryBackground(loadConfig().limits.backgroundQueryMs)
 process.stdout.write(ENTER_ALTERNATE_SCREEN)
-const { keyboard, stop } = startMouse()
+const { keyboard, stop } = startMouse(loadConfig().limits.doubleClickMs)
 mouse.on("mouse", dispatchMouse)
 const resumedFolder = process.env.GITTT_FOLDER
 const instance = render(<Root initial={resumedFolder ?? resolve(process.argv[2] ?? process.cwd())} resumed={Boolean(resumedFolder)} />, { exitOnCtrlC: true, stdin: keyboard as unknown as NodeJS.ReadStream })

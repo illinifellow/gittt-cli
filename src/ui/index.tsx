@@ -19,7 +19,7 @@ import { DiffHighlighter, type Segment } from "@/highlight"
 import { buildLog, collectBadges, commitNamer, describeOperation } from "@/history"
 import { WORKING_TREE, type Commit, type CommitDetails, type Repository } from "@/protocol"
 import type { RepositoryStore } from "@/store"
-import { readEditorTheme } from "@/theme"
+import { readEditorTheme } from "@/syntax"
 import { DiffPane, FilesPane, diffLines, filesOf, gutterWidth, lineText, selectedText, type DetailsEvents, type DiffSelection } from "./details"
 import type { MouseEvent } from "@/mouse"
 import { Clickable } from "@/mouse/regions"
@@ -27,13 +27,15 @@ import { DialogBox, dialogActivate, dialogKey, openDialogState, type DialogState
 import { LogPane, descriptionWidth, graphWidth, visibleRange, type LogColumn, type LogEvents } from "./log"
 import { MenuBox, type MenuItem, type MenuState } from "./menu"
 import { terminalBackground } from "@/terminal"
-import { fit, mix, paletteOf } from "./text"
+import { resolveTheme } from "@/theme"
+import { fit } from "./text"
+import { ThemeProvider } from "./theme"
 import { TreePane, flattenTree, sectionKey, type TreeEvents, type TreeNode } from "./tree"
 
 type Pane = "tree" | "log" | "files" | "diff"
 
 const PANES: Pane[] = ["tree", "log", "files", "diff"]
-const highlighter = new DiffHighlighter(readEditorTheme())
+const highlighter = new DiffHighlighter(readEditorTheme(), loadConfig().limits)
 
 const toClipboard = (text: string) => {
   const child = spawn(process.platform === "darwin" ? "pbcopy" : "xclip", process.platform === "darwin" ? [] : ["-selection", "clipboard"])
@@ -48,7 +50,8 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   const { exit } = useApp()
   const { columns: screenWidth, rows: screenHeight } = useWindowSize()
   const [config, setConfig] = useState<Config>(loadConfig)
-  const palette = useMemo(() => paletteOf(config.tokens, terminalBackground()), [config.tokens])
+  const theme = useMemo(() => resolveTheme(config, terminalBackground()), [config])
+  const { colors: palette, glyphs } = theme
   const [repositories, setRepositories] = useState<Repository[]>(store.repositories)
   const [scanning, setScanning] = useState(true)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
@@ -75,7 +78,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null)
   useEffect(() => {
     if (!status) return
-    const timer = setTimeout(() => setStatus(null), status.error ? 8000 : 4000)
+    const timer = setTimeout(() => setStatus(null), status.error ? config.limits.errorStatusMs : config.limits.statusMs)
     return () => clearTimeout(timer)
   }, [status])
   const signature = useRef("")
@@ -153,7 +156,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     }
     let current = true
     void (async () => {
-      const text = await readDiff(repository.path, details.hash, selectedFile)
+      const text = await readDiff(repository.path, details.hash, selectedFile, config.limits.diffKilobytes)
       if (!current) return
       if (lastDiffText.current.key === `${selectedFile.path}\0${text}`) return
       lastDiffText.current = { key: `${selectedFile.path}\0${text}` }
@@ -167,7 +170,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     }
   }, [repository?.path, details, selectedFile?.path])
 
-  const treeNodes = useMemo(() => flattenTree(repositories, expanded, filter, palette), [repositories, expanded, filter, palette])
+  const treeNodes = useMemo(() => flattenTree(repositories, expanded, filter, palette, glyphs), [repositories, expanded, filter, palette, glyphs])
   const node: TreeNode | undefined = treeNodes[Math.min(treeCursor, treeNodes.length - 1)]
   const found = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -175,7 +178,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   }, [query, log.entries])
   const badges = repository && details ? collectBadges(repository).get(details.hash) ?? [] : []
   const operation = repository && details?.hash === WORKING_TREE ? describeOperation(repository, commitNamer(repository)) : ""
-  const lines = useMemo(() => diffLines(details, badges, operation, diff, settings.gitmoji, palette), [details, diff, operation, settings.gitmoji, palette, badges.length])
+  const lines = useMemo(() => diffLines(details, badges, operation, diff, settings.gitmoji, theme), [details, diff, operation, settings.gitmoji, palette, badges.length])
 
   const run = useCallback(async (path: string, label: string, commands: string[][]) => {
     setBusy(label)
@@ -307,7 +310,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     paths.splice(index, 1)
     paths.splice(next, 0, moving)
     store.reorder(paths)
-    const nextNode = flattenTree(store.repositories, expanded, filter, palette).findIndex(candidate => candidate.key === moving)
+    const nextNode = flattenTree(store.repositories, expanded, filter, palette, glyphs).findIndex(candidate => candidate.key === moving)
     if (nextNode !== -1) setTreeCursor(nextNode)
   }
 
@@ -403,44 +406,45 @@ export const App = ({ store }: { store: RepositoryStore }) => {
       if (input && !key.ctrl && !key.meta) setQuery(query + input)
       return
     }
-    if (input === "q" || (key.ctrl && input === "c")) return exit()
+    const keys = config.keys
+    if (input === keys.quit || (key.ctrl && input === "c")) return exit()
     if (key.tab) return setFocus(PANES[(PANES.indexOf(focus) + (key.shift ? PANES.length - 1 : 1)) % PANES.length])
-    if (input === "f") return openDialog("fetch")
-    if (input === "p") return openDialog("pull")
-    if (input === "P") return openDialog("push")
-    if (input === "b") return openDialog("branch", focus === "log" && entry && entry.hash !== WORKING_TREE ? { hash: entry.hash } : {})
-    if (input === "m") return openDialog("merge")
-    if (input === "s") return openDialog("stash")
-    if (input === "t") return openDialog("tag", focus === "log" && entry && entry.hash !== WORKING_TREE ? { hash: entry.hash, subject: entry.subject } : {})
-    if (input === "c") return setStatus({ text: "Commit: stage and commit in VS Code Source Control or with git commit", error: false })
-    if (input === "r") return treeEvents.onAction("rescan")
-    if (input === "K" || input === "J") return moveRepository(input === "K" ? -1 : 1)
-    if (input === "a") return askAddRepository()
-    if (input === "1") return cycleSetting("branches")
-    if (input === "2") return cycleSetting("showRemoteBranches")
-    if (input === "3") return cycleSetting("order")
-    if (input === "4") return cycleSetting("compact")
-    if (input === "5") return cycleSetting("dateFormat")
-    if (input === "6") return cycleSetting("gitmoji")
-    if (input === "v") return cycleSetting("fileView")
-    if (input === "[" || input === "]") return resizeColumn("graph", input === "]" ? 2 : -2)
-    if (input === "{" || input === "}") return resizeColumn("author", input === "}" ? 2 : -2)
-    if (input === "(" || input === ")") return resizeColumn("date", input === ")" ? 2 : -2)
-    if (input === "<" || input === ">") return resizeColumn("tree", input === ">" ? 2 : -2)
-    if (input === "." || input === " " && focus !== "tree") {
+    if (input === keys.fetch) return openDialog("fetch")
+    if (input === keys.pull) return openDialog("pull")
+    if (input === keys.push) return openDialog("push")
+    if (input === keys.branch) return openDialog("branch", focus === "log" && entry && entry.hash !== WORKING_TREE ? { hash: entry.hash } : {})
+    if (input === keys.merge) return openDialog("merge")
+    if (input === keys.stash) return openDialog("stash")
+    if (input === keys.tag) return openDialog("tag", focus === "log" && entry && entry.hash !== WORKING_TREE ? { hash: entry.hash, subject: entry.subject } : {})
+    if (input === keys.commit) return setStatus({ text: "Commit: stage and commit in VS Code Source Control or with git commit", error: false })
+    if (input === keys.rescan) return treeEvents.onAction("rescan")
+    if (input === keys.moveUp || input === keys.moveDown) return moveRepository(input === keys.moveUp ? -1 : 1)
+    if (input === keys.add) return askAddRepository()
+    if (input === keys.branches) return cycleSetting("branches")
+    if (input === keys.remotes) return cycleSetting("showRemoteBranches")
+    if (input === keys.order) return cycleSetting("order")
+    if (input === keys.view) return cycleSetting("compact")
+    if (input === keys.dates) return cycleSetting("dateFormat")
+    if (input === keys.gitmoji) return cycleSetting("gitmoji")
+    if (input === keys.fileView) return cycleSetting("fileView")
+    if (input === keys.graphNarrower || input === keys.graphWider) return resizeColumn("graph", input === keys.graphWider ? 2 : -2)
+    if (input === keys.authorNarrower || input === keys.authorWider) return resizeColumn("author", input === keys.authorWider ? 2 : -2)
+    if (input === keys.dateNarrower || input === keys.dateWider) return resizeColumn("date", input === keys.dateWider ? 2 : -2)
+    if (input === keys.sidebarNarrower || input === keys.sidebarWider) return resizeColumn("tree", input === keys.sidebarWider ? 2 : -2)
+    if (input === keys.menu || input === " " && focus !== "tree") {
       const items = focus === "tree" ? treeMenu() : focus === "log" ? commitMenu() : []
       if (items.length) setMenu({ title: focus === "tree" ? node?.label ?? "" : entry?.subject ?? "", items, cursor: 0 })
       return
     }
-    if (input === "/") return focus === "tree" ? setFiltering(true) : setJumping(true)
-    if (input === "y" && entry && entry.hash !== WORKING_TREE) return copy(entry.hash)
+    if (input === keys.search) return focus === "tree" ? setFiltering(true) : setJumping(true)
+    if (input === keys.copyHash && entry && entry.hash !== WORKING_TREE) return copy(entry.hash)
     const page = Math.max(1, Math.floor(screenHeight / 2))
     const step = key.upArrow ? -1 : key.downArrow ? 1 : key.pageUp ? -page : key.pageDown ? page : 0
     if (focus !== "tree" && (key.leftArrow || key.rightArrow)) return shiftPane(focus, key.leftArrow ? -1 : 1)
     if (focus === "tree") {
       if (step) return setTreeCursor(Math.max(0, Math.min(treeNodes.length - 1, treeCursor + step)))
       if (key.shift && (key.leftArrow || key.rightArrow)) return shiftPane("tree", key.leftArrow ? -1 : 1)
-      if (input === "x" && node?.kind === "repository") return store.hide(node.path)
+      if (input === keys.remove && node?.kind === "repository") return store.hide(node.path)
       if (key.rightArrow) return toggleNode(node, true)
       if (key.leftArrow) return toggleNode(node, false)
       if (input === " ") return toggleNode(node)
@@ -511,14 +515,14 @@ export const App = ({ store }: { store: RepositoryStore }) => {
 
   const commitAction = () => setStatus({ text: "Commit: stage and commit in VS Code Source Control or with git commit", error: false })
   const TOOLS: { label: string; key: string; count?: number; run: () => void }[] = [
-    { label: "Commit", key: "c", count: changes, run: commitAction },
-    { label: "Pull", key: "p", count: current?.behind, run: () => openDialog("pull") },
-    { label: "Push", key: "P", count: current?.ahead, run: () => openDialog("push") },
-    { label: "Fetch", key: "f", run: () => openDialog("fetch") },
-    { label: "Branch", key: "b", run: () => openDialog("branch") },
-    { label: "Merge", key: "m", run: () => openDialog("merge") },
-    { label: "Stash", key: "s", count: repository?.stashes.length, run: () => openDialog("stash") },
-    { label: "Tag", key: "t", run: () => openDialog("tag") },
+    { label: "Commit", key: config.keys.commit, count: changes, run: commitAction },
+    { label: "Pull", key: config.keys.pull, count: current?.behind, run: () => openDialog("pull") },
+    { label: "Push", key: config.keys.push, count: current?.ahead, run: () => openDialog("push") },
+    { label: "Fetch", key: config.keys.fetch, run: () => openDialog("fetch") },
+    { label: "Branch", key: config.keys.branch, run: () => openDialog("branch") },
+    { label: "Merge", key: config.keys.merge, run: () => openDialog("merge") },
+    { label: "Stash", key: config.keys.stash, count: repository?.stashes.length, run: () => openDialog("stash") },
+    { label: "Tag", key: config.keys.tag, run: () => openDialog("tag") },
   ]
   const FILTERS: { key: "branches" | "showRemoteBranches" | "order" | "compact" | "dateFormat" | "gitmoji"; label: string }[] = [
     { key: "branches", label: settings.branches === "all" ? "All Branches" : "Current Branch" },
@@ -654,12 +658,12 @@ export const App = ({ store }: { store: RepositoryStore }) => {
 
 
   const overlay = dialog ? (
-    <DialogBox state={dialog} width={width} height={bodyHeight} palette={palette}
+    <DialogBox state={dialog} width={width} height={bodyHeight}
       onActivate={(stop, choice) => setDialog(dialogActivate(dialog, stop, choice))}
       onCancel={() => setDialog(null)}
       onSubmit={() => submitDialog(dialog)} />
   ) : menu ? (
-    <MenuBox state={menu} width={width} height={bodyHeight} palette={palette}
+    <MenuBox state={menu} width={width} height={bodyHeight}
       onChoose={index => {
         setMenu(null)
         menu.items[index]?.run()
@@ -667,21 +671,22 @@ export const App = ({ store }: { store: RepositoryStore }) => {
       onClose={() => setMenu(null)} />
   ) : prompt ? (
     <Box width={width} height={bodyHeight} justifyContent="center" alignItems="flex-start" paddingTop={2}>
-      <Box flexDirection="column" width={Math.min(90, width - 4)} borderStyle="round" borderColor={palette.accent} paddingX={1}>
+      <Box flexDirection="column" width={Math.min(theme.spacing.dialogWidth + 6, width - 4)} borderStyle="round" borderColor={palette.accent} paddingX={1}>
         <Text bold color={palette.text}>{prompt.label}</Text>
-        <Text backgroundColor={mix(palette.text, palette.background, 0.1)} color={palette.text}>{fit(`${prompt.value}▏`, Math.min(86, width - 8))}</Text>
+        <Text backgroundColor={palette.field} color={palette.text}>{fit(`${prompt.value}${glyphs.cursor}`, Math.min(theme.spacing.dialogWidth + 2, width - 8))}</Text>
         <Box justifyContent="flex-end" gap={2}>
           <Clickable onClick={() => setPrompt(null)}><Text color={palette.text}> Cancel </Text></Clickable>
           <Clickable onClick={() => {
             prompt.onSubmit(prompt.value)
             setPrompt(null)
-          }}><Text bold color={palette.accent} backgroundColor={mix(palette.accent, palette.background, 0.3)}> Add </Text></Clickable>
+          }}><Text bold color={palette.accent} backgroundColor={palette.field}> Add </Text></Clickable>
         </Box>
       </Box>
     </Box>
   ) : null
 
   return (
+    <ThemeProvider value={theme}>
     <Box flexDirection="column" width={width} height={height}>
       <Box height={1} width={width} overflow="hidden">
         <Text color={palette.accent} bold>{" gittt   "}</Text>
@@ -691,48 +696,49 @@ export const App = ({ store }: { store: RepositoryStore }) => {
               <Text color={palette.accent} bold>{tool.key}</Text>
               <Text color={palette.text}> {tool.label}</Text>
               {tool.count ? <Text color={palette.accent} bold>{` ${tool.count}`}</Text> : null}
-              <Text>{"   "}</Text>
+              <Text>{" ".repeat(theme.spacing.toolbarGap)}</Text>
             </Text>
           </Clickable>
         ))}
         <Box flexGrow={1} />
         <Text color={status?.error ? palette.stash : palette.textMuted} wrap="truncate-start">{busy ? `⟳ ${busy}… ` : status ? `${status.text} ` : scanning ? "searching repositories… " : ""}</Text>
       </Box>
-      <Text color={palette.border}>{"─".repeat(width)}</Text>
+      <Text color={palette.border}>{glyphs.rule.repeat(width)}</Text>
       {overlay ?? (
         <Box height={bodyHeight}>
-          <TreePane nodes={treeNodes} cursor={treeCursor} selectedPath={selectedPath} width={treeWidth - 1} height={bodyHeight} focused={focus === "tree"} filter={filter} filtering={filtering} scrollX={scrollX.tree} palette={palette} events={treeEvents} />
+          <TreePane nodes={treeNodes} cursor={treeCursor} selectedPath={selectedPath} width={treeWidth - 1} height={bodyHeight} focused={focus === "tree"} filter={filter} filtering={filtering} scrollX={scrollX.tree} keys={config.keys} events={treeEvents} />
           <Clickable width={1} height={bodyHeight} flexDirection="column" onPress={treeDivider}>
-            <Text color={focus === "tree" ? palette.accent : palette.border}>{"│\n".repeat(bodyHeight).trimEnd()}</Text>
+            <Text color={focus === "tree" ? palette.accent : palette.border}>{`${glyphs.divider}\n`.repeat(bodyHeight).trimEnd()}</Text>
           </Clickable>
           <Box flexDirection="column" width={mainWidth}>
             <Box height={1} overflow="hidden">
               {FILTERS.map(item => (
                 <Clickable key={item.key} flexShrink={0} onClick={() => cycleSetting(item.key)}>
-                  <Text color={palette.text}> {item.label} <Text color={palette.accent}>▾</Text> </Text>
+                  <Text color={palette.text}> {item.label} <Text color={palette.accent}>{glyphs.dropdown}</Text> </Text>
                 </Clickable>
               ))}
               {jumping || query ? (
                 <Text>
-                  <Text color={palette.textMuted}>  / </Text>
-                  <Text backgroundColor={mix(palette.text, palette.background, 0.1)} color={palette.accent}>{fit(`${query}${jumping ? "▏" : ""}${query ? ` ${found.size}` : ""}`, 24)}</Text>
+                  <Text color={palette.textMuted}>  {glyphs.search} </Text>
+                  <Text backgroundColor={palette.field} color={palette.accent}>{fit(`${query}${jumping ? glyphs.cursor : ""}${query ? ` ${found.size}` : ""}`, theme.spacing.searchWidth)}</Text>
                 </Text>
               ) : null}
             </Box>
-            <LogPane entries={log.entries} rows={log.rows} cursor={logCursor} width={mainWidth} height={logHeight} focused={focus === "log"} headHash={repository?.head.hash ?? null} settings={settings} columns={config.columns} found={found} query={query} truncated={truncated} scrollX={scrollX.log} palette={palette} events={logEvents} />
+            <LogPane entries={log.entries} rows={log.rows} cursor={logCursor} width={mainWidth} height={logHeight} focused={focus === "log"} headHash={repository?.head.hash ?? null} settings={settings} columns={config.columns} found={found} query={query} truncated={truncated} scrollX={scrollX.log} events={logEvents} />
             <Clickable height={1} width={mainWidth} onPress={detailsDivider}>
-              <Text color={palette.border}>{"━".repeat(mainWidth)}</Text>
+              <Text color={palette.border}>{glyphs.splitter.repeat(mainWidth)}</Text>
             </Clickable>
             <Box height={detailsHeight}>
-              <FilesPane rows={fileRowsList} cursor={fileCursor} width={filesWidth} height={detailsHeight} focused={focus === "files"} view={fileView} working={details?.hash === WORKING_TREE} scrollX={scrollX.files} palette={palette} events={detailsEvents} />
+              <FilesPane rows={fileRowsList} cursor={fileCursor} width={filesWidth} height={detailsHeight} focused={focus === "files"} view={fileView} working={details?.hash === WORKING_TREE} scrollX={scrollX.files} viewKey={config.keys.fileView} events={detailsEvents} />
               <Clickable width={1} height={detailsHeight} flexDirection="column" onPress={filesDivider}>
-                <Text color={palette.border}>{"│\n".repeat(detailsHeight).trimEnd()}</Text>
+                <Text color={palette.border}>{`${glyphs.divider}\n`.repeat(detailsHeight).trimEnd()}</Text>
               </Clickable>
-              <DiffPane lines={lines} scroll={diffScroll} scrollX={scrollX.diff} cursorLine={diffCursor} selection={selection} width={mainWidth - filesWidth - 1} height={detailsHeight} focused={focus === "diff"} palette={palette} events={detailsEvents} />
+              <DiffPane lines={lines} scroll={diffScroll} scrollX={scrollX.diff} cursorLine={diffCursor} selection={selection} width={mainWidth - filesWidth - 1} height={detailsHeight} focused={focus === "diff"} events={detailsEvents} />
             </Box>
           </Box>
         </Box>
       )}
     </Box>
+    </ThemeProvider>
   )
 }

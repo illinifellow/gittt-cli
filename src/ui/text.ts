@@ -3,7 +3,7 @@
  * truncation and padding to a column width, and the colour tokens.
  */
 import stringWidth from "string-width"
-import type { Config } from "@/config"
+import type { ColorTokens } from "@/theme"
 
 /**
  * @param text any text
@@ -31,30 +31,8 @@ export const fit = (text: string, width: number) => {
  */
 export const widthOf = (text: string) => stringWidth(text)
 
-/** Colour tokens resolved from the config. */
-export type Palette = { [name: string]: string } & { lanes: string[] }
-
-/**
- * Resolves the colour tokens; tints not set in the config are mixed from the
- * text, accent and the terminal's own background.
- * @param tokens the config's tokens
- * @param background the terminal background, `#1e1e1e` when it did not say
- * @returns single colours by name plus the lane palette
- */
-export const paletteOf = (tokens: Config["tokens"], background = "#1e1e1e"): Palette => {
-  const singles = Object.fromEntries(Object.entries(tokens).filter(([, value]) => typeof value === "string")) as Record<string, string>
-  const ground = singles.background ?? background
-  const text = singles.text ?? "#e4e4e4"
-  const derived: Record<string, string> = {
-    background: ground,
-    textMuted: mix(text, ground, 0.55),
-    border: mix(text, ground, 0.16),
-    selection: mix(singles.accent ?? "#ff905c", ground, 0.3),
-    addedBackground: mix(singles.added ?? "#a3be8c", ground, 0.16),
-    deletedBackground: mix(singles.deleted ?? "#ff6b81", ground, 0.16),
-  }
-  return { ...derived, ...singles, lanes: Array.isArray(tokens.laneColors) ? tokens.laneColors : [singles.accent] } as Palette
-}
+/** The active theme's colours. */
+export type Palette = ColorTokens
 
 /**
  * Mixes two hex colours.

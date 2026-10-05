@@ -12,10 +12,12 @@ import type { Segment } from "@/highlight"
 import { splitMessage } from "@/message"
 import { formatDate } from "@/dates"
 import { WORKING_TREE, type CommitDetails } from "@/protocol"
-import { BADGE_GLYPHS, badgeColor, partColor } from "./log"
+import { badgeColor, badgeGlyph, partColor } from "./log"
 import type { MouseEvent } from "@/mouse"
 import { Clickable, type LocalMouseEvent } from "@/mouse/regions"
-import { fit, mix, slide, widthOf, type Palette } from "./text"
+import type { Theme } from "@/theme"
+import { fit, mix, slide, widthOf } from "./text"
+import { useTheme } from "./theme"
 import { windowStart } from "./window"
 
 /** One drawn line of the diff pane. */
@@ -44,15 +46,16 @@ export const filesOf = (details: CommitDetails | null, view: FileView): FileRow[
  * @param operation sentence describing a stopped operation, for the working tree
  * @param diff parsed diff of the selected file and its highlighted code, if loaded
  * @param gitmoji whether shortcodes in the message become emoji
- * @param palette colours
+ * @param theme colours and glyphs
  * @returns lines top to bottom
  */
-export const diffLines = (details: CommitDetails | null, badges: Badge[], operation: string, diff: { file: string; parsed: ParsedDiff; highlights: Segment[][][] | null } | null, gitmoji: boolean, palette: Palette): DiffLine[] => {
+export const diffLines = (details: CommitDetails | null, badges: Badge[], operation: string, diff: { file: string; parsed: ParsedDiff; highlights: Segment[][][] | null } | null, gitmoji: boolean, theme: Theme): DiffLine[] => {
+  const { colors: palette, glyphs } = theme
   if (!details) return []
   const lines: DiffLine[] = []
   const field = (label: string, segments: Segment[]) => lines.push({ segments: [{ text: `${label.padStart(10)}: `, color: palette.textMuted }, ...segments] })
   if (details.hash === WORKING_TREE) {
-    if (operation) lines.push({ segments: [{ text: ` ⚠ ${operation}`, color: palette.stash, bold: true }] }, { segments: [] })
+    if (operation) lines.push({ segments: [{ text: ` ${glyphs.alert} ${operation}`, color: palette.stash, bold: true }] }, { segments: [] })
   } else {
     field("Commit", [{ text: details.hash }, { text: ` [${details.hash.slice(0, 7)}]`, color: palette.textMuted }])
     lines[lines.length - 1].copy = details.hash
@@ -61,20 +64,20 @@ export const diffLines = (details: CommitDetails | null, badges: Badge[], operat
     field("Author", [{ text: details.author }, { text: ` <${details.email}>`, color: palette.textMuted }])
     field("Date", [{ text: formatDate(details.authorTime, "absolute") }])
     if (details.committer !== details.author) field("Committer", [{ text: details.committer }])
-    if (badges.length) field("Labels", badges.flatMap(badge => [{ text: ` ${BADGE_GLYPHS[badge.kind]}${badge.name} `, color: badgeColor(badge, palette), background: mix(badgeColor(badge, palette), palette.background, 0.32), bold: badge.current }, { text: " " }]))
+    if (badges.length) field("Labels", badges.flatMap(badge => [{ text: ` ${badgeGlyph(badge, glyphs)}${badge.name} `, color: badgeColor(badge, palette), background: mix(badgeColor(badge, palette), palette.background, palette.labelGround), bold: badge.current }, { text: " " }]))
     lines.push({ segments: [] })
     for (const messageLine of details.message.split("\n"))
       lines.push({ segments: [{ text: "            " }, ...splitMessage(messageLine, gitmoji).map(part => ({ text: part.text, color: partColor(part, palette) ?? palette.text, bold: part.kind === "prefix" }))] })
     lines.push({ segments: [] })
   }
   if (!diff) return lines
-  lines.push({ segments: [{ text: ` ▤ ${diff.file}`, bold: true, color: palette.text }], background: palette.border, line: 1 })
+  lines.push({ segments: [{ text: ` ${glyphs.file} ${diff.file}`, bold: true, color: palette.text }], background: palette.header, line: 1 })
   if (diff.parsed.binary) return [...lines, { segments: [{ text: "   Binary file", color: palette.textMuted }] }]
   if (!diff.parsed.hunks.length) return [...lines, { segments: [{ text: "   No content changes", color: palette.textMuted }] }]
   const prefix = prefixWidth(diff.parsed)
   diff.parsed.hunks.forEach((hunk, hunkIndex) => {
     const last = hunk.newStart + Math.max(hunk.newCount, 1) - 1
-    lines.push({ segments: [] }, { segments: [{ text: ` Hunk ${hunkIndex + 1} : Lines ${hunk.newStart}-${last}`, color: palette.textMuted }], background: palette.border, line: hunk.newStart })
+    lines.push({ segments: [] }, { segments: [{ text: ` Hunk ${hunkIndex + 1} : Lines ${hunk.newStart}-${last}`, color: palette.textMuted }], background: palette.header, line: hunk.newStart })
     let oldLine = hunk.oldStart
     let newLine = hunk.newStart
     hunk.lines.forEach((text, lineIndex) => {
@@ -121,10 +124,10 @@ export interface DetailsEvents {
  * @param props.view current list view, for the header
  * @param props.working whether the rows are pending files ("Pending files") or a commit's ("Files")
  * @param props.scrollX cells scrolled sideways
- * @param props.palette colours
+ * @param props.viewKey the key that cycles the view, shown in the header
  * @param props.events clicks, double clicks and wheel
  */
-export const FilesPane = ({ rows, cursor, width, height, focused, view, working, scrollX, palette, events }: {
+export const FilesPane = ({ rows, cursor, width, height, focused, view, working, scrollX, viewKey, events }: {
   rows: FileRow[]
   cursor: number
   width: number
@@ -133,9 +136,10 @@ export const FilesPane = ({ rows, cursor, width, height, focused, view, working,
   view: FileView
   working: boolean
   scrollX: number
-  palette: Palette
+  viewKey: string
   events: DetailsEvents
 }) => {
+  const { colors: palette, glyphs, spacing } = useTheme()
   const listHeight = Math.max(1, height - 1)
   const start = windowStart(cursor, rows.length, listHeight, 1 / 2)
   const noun = working ? "Pending files" : "Files"
@@ -144,29 +148,29 @@ export const FilesPane = ({ rows, cursor, width, height, focused, view, working,
   return (
     <Clickable flexDirection="column" width={width} height={height} onWheel={events.onFilesWheel}>
       <Clickable height={1} onClick={events.onFilesHeader}>
-        <Text color={focused ? palette.accent : palette.textMuted} bold>{fit(` ≡ ${noun}, ${sort[view]} ▾ (v)`, width - 5)}{String(fileCount).padStart(5)}</Text>
+        <Text color={focused ? palette.accent : palette.textMuted} bold>{fit(` ${noun}, ${sort[view]} ${glyphs.dropdown} (${viewKey})`, width - 5)}{String(fileCount).padStart(5)}</Text>
       </Clickable>
       {!rows.length ? <Text color={palette.textMuted}>{fit(working ? "   Nothing to commit" : "   No files changed", width)}</Text> : null}
       {rows.slice(start, start + listHeight).map((row, offset) => {
         const index = start + offset
         const selected = index === cursor
-        const background = selected ? (focused ? palette.selection : palette.border) : undefined
-        const indent = " ".repeat(row.depth * 2 + 1)
+        const background = selected ? (focused ? palette.selection : palette.selectionInactive) : undefined
+        const indent = " ".repeat(row.depth * spacing.indent + 1)
         if (row.kind === "folder")
           return (
             <Clickable key={`folder:${index}`} height={1} onClick={event => events.onFile(index, "click", event)}>
-              <Text backgroundColor={background} color={palette.textMuted}>{fit(slide(`${indent}▾ ${row.name}/`, scrollX), width)}</Text>
+              <Text backgroundColor={background} color={palette.textMuted}>{fit(slide(`${indent}${glyphs.folder} ${row.name}/`, scrollX), width)}</Text>
             </Clickable>
           )
         const status = FILE_STATUSES[row.file.status] ?? FILE_STATUSES.M
-        const tone = palette[status.tone === "conflicted" ? "stash" : status.tone]
+        const tone = palette[status.tone]
         const name = slide(`${row.folder}${row.name}`, scrollX)
         const folderShown = Math.max(0, widthOf(row.folder) - scrollX)
         return (
           <Clickable key={row.file.path} height={1} width={width} onClick={event => events.onFile(index, "click", event)} onDoubleClick={event => events.onFile(index, "double", event)}>
             <Text backgroundColor={background} wrap="truncate-end">
               <Text>{indent}</Text>
-              <Text color={tone} bold>{status.glyph} </Text>
+              <Text color={tone} bold>{glyphs.status[status.tone]} </Text>
               <Text color={palette.textMuted}>{[...name].slice(0, folderShown).join("")}</Text>
               <Text color={palette.text}>{fit([...name].slice(folderShown).join(""), Math.max(1, width - indent.length - 2 - folderShown))}</Text>
             </Text>
@@ -225,10 +229,9 @@ export const selectedText = (lines: DiffLine[], selection: DiffSelection) => {
  * @param props.width pane width in cells
  * @param props.height pane height in rows
  * @param props.focused whether the pane has the keyboard (the cursor line is drawn only then)
- * @param props.palette colours
  * @param props.events clicks, double clicks, wheel and the selection drag
  */
-export const DiffPane = ({ lines, scroll, scrollX, cursorLine, selection, width, height, focused, palette, events }: {
+export const DiffPane = ({ lines, scroll, scrollX, cursorLine, selection, width, height, focused, events }: {
   lines: DiffLine[]
   scroll: number
   scrollX: number
@@ -237,9 +240,9 @@ export const DiffPane = ({ lines, scroll, scrollX, cursorLine, selection, width,
   width: number
   height: number
   focused: boolean
-  palette: Palette
   events: DetailsEvents
 }) => {
+  const { colors: palette } = useTheme()
   const range = selection ? ordered(selection) : null
   return (
     <Clickable flexDirection="column" width={width} height={height} onWheel={events.onDiffWheel} onPress={event => events.onSelect(event)}>

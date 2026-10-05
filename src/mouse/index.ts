@@ -12,7 +12,7 @@ export interface MouseEvent {
   y: number
   kind: "down" | "up" | "drag" | "wheelUp" | "wheelDown" | "wheelLeft" | "wheelRight"
   button: "left" | "middle" | "right" | "none"
-  /** A second press on the same cell within 400 ms. */
+  /** A second press on the same cell within the configured double-click time. */
   double: boolean
   shift: boolean
 }
@@ -20,7 +20,6 @@ export interface MouseEvent {
 const ENABLE = "\x1b[?1000h\x1b[?1002h\x1b[?1006h"
 const DISABLE = "\x1b[?1000l\x1b[?1002l\x1b[?1006l"
 const REPORT = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g
-const DOUBLE_CLICK_MS = 400
 
 /** Emits `mouse` with a MouseEvent. */
 export const mouse = new EventEmitter()
@@ -30,9 +29,10 @@ type KeyboardStream = PassThrough & { isTTY: boolean; setRawMode: (mode: boolean
 
 /**
  * Starts mouse reporting and splits stdin.
+ * @param doubleClickMs the longest gap between two presses on one cell that still makes a double click
  * @returns the keyboard-only stream to hand to ink, and a function that switches mouse reporting off again
  */
-export const startMouse = () => {
+export const startMouse = (doubleClickMs: number) => {
   const keyboard = new PassThrough() as KeyboardStream
   keyboard.isTTY = true
   keyboard.setRawMode = mode => {
@@ -57,7 +57,7 @@ export const startMouse = () => {
       let double = false
       if (kind === "down" && button === "left") {
         const now = Date.now()
-        double = now - lastPress.time < DOUBLE_CLICK_MS && lastPress.x === x && lastPress.y === y
+        double = now - lastPress.time < doubleClickMs && lastPress.x === x && lastPress.y === y
         lastPress = double ? { x: -1, y: -1, time: 0 } : { x, y, time: now }
       }
       mouse.emit("mouse", { x, y, kind, button, double, shift } satisfies MouseEvent)

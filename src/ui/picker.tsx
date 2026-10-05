@@ -9,7 +9,8 @@ import { basename, dirname, join, resolve } from "node:path"
 import { Box, Text, useApp, useInput } from "ink"
 import { useEffect, useRef, useState } from "react"
 import { mouse, type MouseEvent } from "@/mouse"
-import { fit, type Palette } from "./text"
+import { fit } from "./text"
+import { useTheme } from "./theme"
 
 const expand = (path: string) => resolve(path.replace(/^~(?=$|\/)/, homedir()))
 
@@ -33,10 +34,10 @@ const complete = (typed: string) => {
  * @param props.initial folder the input starts with
  * @param props.recent recently opened folders, newest first
  * @param props.onPick called with the chosen folder once it exists
- * @param props.palette colours
  * @param props.width screen width in cells
  */
-export const FolderPicker = ({ initial, recent, onPick, palette, width }: { initial: string; recent: string[]; onPick: (folder: string) => void; palette: Palette; width: number }) => {
+export const FolderPicker = ({ initial, recent, onPick, width }: { initial: string; recent: string[]; onPick: (folder: string) => void; width: number }) => {
+  const { colors: palette, glyphs } = useTheme()
   const { exit } = useApp()
   const [value, setValue] = useState(initial)
   const [cursor, setCursor] = useState(-1)
@@ -80,14 +81,14 @@ export const FolderPicker = ({ initial, recent, onPick, palette, width }: { init
   const boxWidth = Math.min(90, width - 4)
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1}>
-      <Text color={palette.accent} bold>◆ gittt</Text>
+      <Text color={palette.accent} bold>gittt</Text>
       <Text color={palette.text}>Where should gittt look for repositories?</Text>
       <Box borderStyle="round" borderColor={palette.accent} width={boxWidth} marginTop={1}>
-        <Text color={palette.text}>{fit(`${value}▏`, boxWidth - 2)}</Text>
+        <Text color={palette.text}>{fit(`${value}${glyphs.cursor}`, boxWidth - 2)}</Text>
       </Box>
-      {error ? <Text color={palette.stash}>✖ {error}</Text> : null}
+      {error ? <Text color={palette.stash}>{glyphs.error} {error}</Text> : null}
       {choices.length ? <Text color={palette.textMuted}>Recent</Text> : null}
-      {choices.map((folder, index) => <Text key={folder} color={index === cursor ? palette.accent : palette.text}>{index === cursor ? "› " : "  "}{folder}</Text>)}
+      {choices.map((folder, index) => <Text key={folder} color={index === cursor ? palette.accent : palette.text}>{index === cursor ? `${glyphs.pointer} ` : "  "}{folder}</Text>)}
       <Text color={palette.textMuted}>{"\n"}enter start · tab complete · ↑↓ or click recent · double-click opens · esc quit</Text>
     </Box>
   )

@@ -6,15 +6,17 @@
 
 const QUERY = "\x1b]11;?\x07"
 const REPLY = /\x1b\]11;rgb:([0-9a-f]{2,4})\/([0-9a-f]{2,4})\/([0-9a-f]{2,4})/i
-const WAIT_MS = 200
 
 let detected: string | undefined
 
 /** @returns the background found by `queryBackground`, or `undefined` before it ran or when the terminal stayed silent */
 export const terminalBackground = () => detected
 
-/** @returns the background as `#rrggbb`, or `null` when the terminal does not answer within 200 ms; remembered for `terminalBackground` */
-export const queryBackground = () => new Promise<string | null>(resolve => {
+/**
+ * @param waitMs how long to wait for the answer
+ * @returns the background as `#rrggbb`, or `null` when the terminal does not answer in time; remembered for `terminalBackground`
+ */
+export const queryBackground = (waitMs: number) => new Promise<string | null>(resolve => {
   if (!process.stdin.isTTY || !process.stdout.isTTY) return resolve(null)
   let reply = ""
   const finish = (color: string | null) => {
@@ -30,7 +32,7 @@ export const queryBackground = () => new Promise<string | null>(resolve => {
     const match = REPLY.exec(reply)
     if (match) finish(`#${match.slice(1, 4).map(channel => channel.slice(0, 2)).join("")}`)
   }
-  const timer = setTimeout(() => finish(null), WAIT_MS)
+  const timer = setTimeout(() => finish(null), waitMs)
   process.stdin.setRawMode(true)
   process.stdin.on("data", listen)
   process.stdin.resume()

@@ -7,8 +7,8 @@ import { Box, Text, type Key } from "ink"
 import type { ReactNode } from "react"
 import { initialValues, type DialogSpec, type DialogTarget, type DialogValues, type Field } from "@/dialogs"
 import { Clickable } from "@/mouse/regions"
-import { ICONS } from "./icons"
-import { fit, mix, type Palette } from "./text"
+import { fit } from "./text"
+import { useTheme } from "./theme"
 
 /** A focusable stop inside a dialog. */
 type Stop =
@@ -116,22 +116,21 @@ export const dialogActivate = (state: DialogState, stop: number, choice?: string
  * @param props.state the open dialog
  * @param props.width area width in cells
  * @param props.height area height in rows
- * @param props.palette colours
  * @param props.onActivate a control was clicked: its stop index and, for radio rows, the choice
  * @param props.onCancel Cancel was clicked
  * @param props.onSubmit the submit button was clicked
  */
-export const DialogBox = ({ state, width, height, palette, onActivate, onCancel, onSubmit }: {
+export const DialogBox = ({ state, width, height, onActivate, onCancel, onSubmit }: {
   state: DialogState
   width: number
   height: number
-  palette: Palette
   onActivate: (stop: number, choice?: string) => void
   onCancel: () => void
   onSubmit: () => void
 }) => {
-  const boxWidth = Math.min(84, width - 4)
-  const labelWidth = 26
+  const { colors: palette, glyphs, spacing } = useTheme()
+  const boxWidth = Math.min(spacing.dialogWidth, width - 4)
+  const labelWidth = spacing.dialogLabel
   const valueWidth = boxWidth - labelWidth - 5
   const stops = stopsOf(state.spec)
   const focused = stops[state.focus]
@@ -140,33 +139,33 @@ export const DialogBox = ({ state, width, height, palette, onActivate, onCancel,
   state.spec.fields.forEach((field, index) => {
     const stop = indexOf({ kind: "field", field: index })
     const focus = stop === state.focus
-    const marker = <Text color={palette.accent}>{focus ? "›" : " "}</Text>
+    const marker = <Text color={palette.accent}>{focus ? glyphs.pointer : " "}</Text>
     const label = (text: string) => <Text color={palette.textMuted}>{fit(`${text}:`, labelWidth)}</Text>
     switch (field.type) {
       case "info":
         rows.push({ stop: null, node: <Text> {label(field.label)}<Text bold color={palette.text}>{fit(field.text, valueWidth)}</Text></Text> })
         break
       case "warning":
-        rows.push({ stop: null, node: <Text color={palette.stash}>{fit(` ${ICONS.alert} ${field.text}`, boxWidth - 4)}</Text> })
+        rows.push({ stop: null, node: <Text color={palette.stash}>{fit(` ${glyphs.alert} ${field.text}`, boxWidth - 4)}</Text> })
         break
       case "text": {
         const value = String(state.values[field.key] ?? "")
-        rows.push({ stop, node: <Text>{marker}{label(field.label)}<Text backgroundColor={mix(palette.text, palette.background, 0.1)} color={value ? palette.text : palette.textMuted}>{fit(value ? `${value}${focus ? "▏" : ""}` : `${field.placeholder ?? ""}${focus ? "▏" : ""}`, valueWidth)}</Text></Text> })
+        rows.push({ stop, node: <Text>{marker}{label(field.label)}<Text backgroundColor={palette.field} color={value ? palette.text : palette.textMuted}>{fit(value ? `${value}${focus ? glyphs.cursor : ""}` : `${field.placeholder ?? ""}${focus ? glyphs.cursor : ""}`, valueWidth)}</Text></Text> })
         break
       }
       case "select": {
         const choice = field.choices.find(candidate => candidate.value === state.values[field.key])
-        rows.push({ stop, node: <Text>{marker}{label(field.label)}<Text backgroundColor={mix(palette.text, palette.background, 0.1)} color={palette.text}>{fit(` ${choice?.label ?? String(state.values[field.key] ?? "")}`, valueWidth - 2)}</Text><Text backgroundColor={mix(palette.text, palette.background, 0.1)} color={palette.accent}>⇕ </Text></Text> })
+        rows.push({ stop, node: <Text>{marker}{label(field.label)}<Text backgroundColor={palette.field} color={palette.text}>{fit(` ${choice?.label ?? String(state.values[field.key] ?? "")}`, valueWidth - 2)}</Text><Text backgroundColor={palette.field} color={palette.accent}>{glyphs.dropdown} </Text></Text> })
         break
       }
       case "radio":
         field.choices.forEach((choice, choiceIndex) => rows.push({ stop, choice: choice.value, node: (
-          <Text>{choiceIndex ? " " : marker}{choiceIndex ? " ".repeat(labelWidth) : label(field.label)}<Text color={state.values[field.key] === choice.value ? palette.accent : palette.text}>{state.values[field.key] === choice.value ? "◉ " : "○ "}{fit(choice.label, valueWidth - 2)}</Text></Text>
+          <Text>{choiceIndex ? " " : marker}{choiceIndex ? " ".repeat(labelWidth) : label(field.label)}<Text color={state.values[field.key] === choice.value ? palette.accent : palette.text}>{state.values[field.key] === choice.value ? glyphs.radioOn : glyphs.radioOff} {fit(choice.label, valueWidth - 2)}</Text></Text>
         ) }))
         break
       case "checkbox": {
         const checked = state.values[field.key] === true
-        rows.push({ stop, node: <Text>{marker}{" ".repeat(labelWidth)}<Text color={checked ? palette.accent : palette.text}>{checked ? "☑ " : "☐ "}</Text><Text color={palette.text}>{fit(field.label, valueWidth - 2)}</Text></Text> })
+        rows.push({ stop, node: <Text>{marker}{" ".repeat(labelWidth)}<Text color={checked ? palette.accent : palette.text}>{checked ? glyphs.checked : glyphs.unchecked} </Text><Text color={palette.text}>{fit(field.label, valueWidth - 2)}</Text></Text> })
         if (checked && field.warning) rows.push({ stop: null, node: <Text color={palette.stash}>{" ".repeat(labelWidth + 3)}{fit(field.warning, valueWidth - 2)}</Text> })
         break
       }
@@ -174,13 +173,13 @@ export const DialogBox = ({ state, width, height, palette, onActivate, onCancel,
         const chosen = new Set(state.values[field.key] as string[])
         const all = chosen.size === field.items.length && field.items.length > 0
         const selectAll = indexOf({ kind: "selectAll", field: index })
-        rows.push({ stop: selectAll, node: <Text>{selectAll === state.focus ? <Text color={palette.accent}>›</Text> : " "}<Text color={palette.textMuted}>{fit(field.label, labelWidth)}</Text><Text color={all ? palette.accent : palette.text}>{all ? "☑ " : "☐ "}Select All</Text></Text> })
+        rows.push({ stop: selectAll, node: <Text>{selectAll === state.focus ? <Text color={palette.accent}>{glyphs.pointer}</Text> : " "}<Text color={palette.textMuted}>{fit(field.label, labelWidth)}</Text><Text color={all ? palette.accent : palette.text}>{all ? glyphs.checked : glyphs.unchecked} Select All</Text></Text> })
         const focusItem = focused.kind === "item" && focused.field === index ? focused.item : 0
-        const windowSize = 8
+        const windowSize = spacing.checklistRows
         const first = Math.max(0, Math.min(focusItem - 3, field.items.length - windowSize))
         field.items.slice(first, first + windowSize).forEach((item, offset) => {
           const itemStop = indexOf({ kind: "item", field: index, item: first + offset })
-          rows.push({ stop: itemStop, node: <Text>{itemStop === state.focus ? <Text color={palette.accent}>›</Text> : " "}  <Text color={chosen.has(item.value) ? palette.accent : palette.text}>{chosen.has(item.value) ? "☑ " : "☐ "}</Text><Text color={palette.text}>{fit(item.label, 34)}</Text><Text color={palette.textMuted}> {fit(item.detail ?? "", boxWidth - 44)}</Text></Text> })
+          rows.push({ stop: itemStop, node: <Text>{itemStop === state.focus ? <Text color={palette.accent}>{glyphs.pointer}</Text> : " "}  <Text color={chosen.has(item.value) ? palette.accent : palette.text}>{chosen.has(item.value) ? glyphs.checked : glyphs.unchecked} </Text><Text color={palette.text}>{fit(item.label, 34)}</Text><Text color={palette.textMuted}> {fit(item.detail ?? "", boxWidth - 44)}</Text></Text> })
         })
         if (field.items.length > windowSize) rows.push({ stop: null, node: <Text color={palette.textMuted}>{`    ${field.items.length} items, wheel or ↑ ↓ to scroll`}</Text> })
         break
@@ -193,15 +192,15 @@ export const DialogBox = ({ state, width, height, palette, onActivate, onCancel,
     <Box width={width} height={height} justifyContent="center" alignItems="flex-start" paddingTop={1}>
       <Box flexDirection="column" width={boxWidth} borderStyle="round" borderColor={palette.accent} paddingX={1}>
         <Text bold color={palette.text}>{state.spec.title}</Text>
-        <Text color={palette.border}>{"─".repeat(boxWidth - 4)}</Text>
+        <Text color={palette.border}>{glyphs.rule.repeat(boxWidth - 4)}</Text>
         {rows.map((row, rowIndex) => row.stop === null || row.stop < 0
           ? <Box key={rowIndex} height={1}>{row.node}</Box>
           : <Clickable key={rowIndex} height={1} onClick={() => onActivate(row.stop as number, row.choice)}>{row.node}</Clickable>)}
-        {state.error ? <Text color={palette.stash}>{fit(` ✖ ${state.error}`, boxWidth - 4)}</Text> : null}
-        <Text color={palette.border}>{"─".repeat(boxWidth - 4)}</Text>
+        {state.error ? <Text color={palette.stash}>{fit(` ${glyphs.error} ${state.error}`, boxWidth - 4)}</Text> : null}
+        <Text color={palette.border}>{glyphs.rule.repeat(boxWidth - 4)}</Text>
         <Box justifyContent="flex-end" gap={2}>
           <Clickable onClick={onCancel}><Text inverse={cancelFocused} color={palette.text}> Cancel </Text></Clickable>
-          <Clickable onClick={onSubmit}><Text inverse={submitFocused} bold backgroundColor={submitFocused ? undefined : mix(state.spec.danger ? palette.stash : palette.accent, palette.background, 0.3)} color={state.spec.danger ? palette.stash : palette.accent}> {state.spec.submit} </Text></Clickable>
+          <Clickable onClick={onSubmit}><Text inverse={submitFocused} bold backgroundColor={submitFocused ? undefined : palette.field} color={state.spec.danger ? palette.stash : palette.accent}> {state.spec.submit} </Text></Clickable>
         </Box>
         <Text color={palette.textMuted}>{fit("click or ↑↓ · space toggle · ←→ choose · enter OK · esc cancel", boxWidth - 4)}</Text>
       </Box>

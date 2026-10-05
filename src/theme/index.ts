@@ -1,86 +1,136 @@
 /**
- * Finds the VS Code color theme the user runs (from VS Code's own settings and
- * installed extensions, no VS Code API needed) so the terminal highlights diffs
- * with the editor's colours; falls back to Dark+.
+ * Themes: every colour, glyph and spacing value gittt draws with, as named
+ * tokens. The themes themselves live in `config/default.json` (dark and light
+ * ship; `auto` picks one by the terminal's background) and can be changed or
+ * added in the user config; its `tokens` section overrides single values on top
+ * of the active theme. Components read the resolved theme and hold no literals.
  */
-import { existsSync } from "node:fs"
-import { readdir, readFile } from "node:fs/promises"
-import { homedir, platform } from "node:os"
-import { dirname, join } from "node:path"
-import { parse } from "jsonc-parser"
-import type { ThemeRegistrationAny } from "shiki/core"
-import { bundledThemes } from "shiki/themes"
 
-interface TokenRule {
-  scope?: string | string[]
-  settings: Record<string, string>
+/** Colours, as `#rrggbb`. */
+export interface ColorTokens {
+  background: string
+  text: string
+  textMuted: string
+  border: string
+  accent: string
+  accentText: string
+  selection: string
+  selectionInactive: string
+  repositoryRow: string
+  header: string
+  field: string
+  branch: string
+  currentBranch: string
+  remote: string
+  tag: string
+  head: string
+  stash: string
+  added: string
+  deleted: string
+  modified: string
+  renamed: string
+  untracked: string
+  conflicted: string
+  addedBackground: string
+  deletedBackground: string
+  labelGround: number
+  lanes: string[]
 }
 
-const SHORTHAND_SCOPES: Record<string, string[]> = {
-  comments: ["comment", "punctuation.definition.comment"],
-  strings: ["string"],
-  keywords: ["keyword", "keyword.control", "storage"],
-  numbers: ["constant.numeric"],
-  types: ["entity.name.type", "support.type", "support.class"],
-  functions: ["entity.name.function", "support.function"],
-  variables: ["variable", "entity.name.variable"],
+import type { Config } from "@/config"
+
+/** Characters for icons, marks and the graph. */
+export interface GlyphTokens {
+  repository: string
+  branch: string
+  remote: string
+  tag: string
+  commit: string
+  sync: string
+  alert: string
+  stash: string
+  workspace: string
+  fileStatus: string
+  history: string
+  search: string
+  add: string
+  rescan: string
+  moveUp: string
+  moveDown: string
+  ahead: string
+  behind: string
+  open: string
+  closed: string
+  currentBranch: string
+  dropdown: string
+  checked: string
+  unchecked: string
+  radioOn: string
+  radioOff: string
+  pointer: string
+  cursor: string
+  error: string
+  file: string
+  folder: string
+  rule: string
+  divider: string
+  splitter: string
+  status: Record<"added" | "modified" | "deleted" | "renamed" | "conflicted" | "untracked", string>
+  graph: Record<"node" | "head" | "working" | "vertical" | "horizontal" | "downRight" | "downLeft" | "upRight" | "upLeft" | "teeLeft" | "teeRight" | "teeUp" | "teeDown" | "cross" | "endUp" | "endDown", string>
 }
 
-const userSettingsPath = () => {
-  if (platform() === "darwin") return join(homedir(), "Library", "Application Support", "Code", "User", "settings.json")
-  if (platform() === "win32") return join(process.env.APPDATA ?? "", "Code", "User", "settings.json")
-  return join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "Code", "User", "settings.json")
+/** Sizes in terminal cells and rows. */
+export interface SpacingTokens {
+  indent: number
+  toolbarGap: number
+  dialogWidth: number
+  dialogLabel: number
+  menuWidth: number
+  checklistRows: number
+  searchWidth: number
 }
 
-const EXTENSION_ROOTS = [
-  join(homedir(), ".vscode", "extensions"),
-  "/Applications/Visual Studio Code.app/Contents/Resources/app/extensions",
-  "/usr/share/code/resources/app/extensions",
-]
-
-const readJson = async <Shape>(path: string) => parse(await readFile(path, "utf8"), [], { allowTrailingComma: true }) as Shape
-
-const loadThemeFile = async (path: string): Promise<{ colors: Record<string, string>; tokenColors: TokenRule[]; type?: string }> => {
-  const theme = await readJson<{ include?: string; type?: string; colors?: Record<string, string>; tokenColors?: TokenRule[] | string }>(path)
-  const base = theme.include ? await loadThemeFile(join(dirname(path), theme.include)) : { colors: {}, tokenColors: [] as TokenRule[] }
-  const own = typeof theme.tokenColors === "string" ? (await readJson<{ settings?: TokenRule[] }>(join(dirname(path), theme.tokenColors))).settings ?? [] : theme.tokenColors ?? []
-  return { type: theme.type ?? base.type, colors: { ...base.colors, ...theme.colors }, tokenColors: [...base.tokenColors, ...own] }
+/** A full theme. */
+export interface Theme {
+  colors: ColorTokens
+  glyphs: GlyphTokens
+  spacing: SpacingTokens
 }
 
-const findThemePath = async (name: string) => {
-  for (const root of EXTENSION_ROOTS) {
-    if (!existsSync(root)) continue
-    for (const folder of await readdir(root)) {
-      const manifest = await readJson<{ contributes?: { themes?: { id?: string; label?: string; path: string }[] } }>(join(root, folder, "package.json")).catch(() => null)
-      const match = manifest?.contributes?.themes?.find(theme => theme.id === name || theme.label === name)
-      if (match) return join(root, folder, match.path)
-    }
-  }
-  return null
+/** Partial overrides of a theme, as stored in the config. */
+export interface ThemeOverrides {
+  colors?: Partial<ColorTokens>
+  glyphs?: Partial<GlyphTokens>
+  spacing?: Partial<SpacingTokens>
 }
 
-const customizationRules = (customizations: Record<string, unknown> | undefined): TokenRule[] => {
-  if (!customizations) return []
-  const rules: TokenRule[] = []
-  for (const [key, scopes] of Object.entries(SHORTHAND_SCOPES)) {
-    const value = customizations[key]
-    if (typeof value === "string") rules.push({ scope: scopes, settings: { foreground: value } })
-    else if (value && typeof value === "object") rules.push({ scope: scopes, settings: value as Record<string, string> })
-  }
-  return [...rules, ...((customizations.textMateRules as TokenRule[] | undefined) ?? [])]
+/** Luminance of a `#rrggbb` colour, 0 (black) to 1 (white). */
+const luminance = (color: string) => {
+  const [red, green, blue] = [1, 3, 5].map(index => parseInt(color.slice(index, index + 2), 16) / 255)
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue
 }
 
-/** @returns the VS Code theme in use with the user's token colour customizations, or Dark+ when VS Code is absent */
-export const readEditorTheme = async (): Promise<ThemeRegistrationAny> => {
-  const settings = await readJson<Record<string, unknown>>(userSettingsPath()).catch(() => ({} as Record<string, unknown>))
-  const name = String(settings["workbench.colorTheme"] ?? "")
-  const path = name ? await findThemePath(name) : null
-  const theme = path ? await loadThemeFile(path).catch(() => null) : null
-  const fallback = theme ?? ((await bundledThemes["dark-plus"]()).default as unknown as { colors: Record<string, string>; tokenColors: TokenRule[]; type?: string })
-  const customizations = settings["editor.tokenColorCustomizations"] as Record<string, unknown> | undefined
+/**
+ * Picks the theme name for `auto`.
+ * @param background the terminal background, if it answered
+ * @returns `light` on a light background, `dark` otherwise
+ */
+export const autoTheme = (background: string | undefined) => background && luminance(background) > 0.5 ? "light" : "dark"
+
+/**
+ * Builds the active theme from the configuration.
+ * @param config themes, icon sets, overrides and settings (`theme`, `icons`)
+ * @param background the terminal background; in `auto` it chooses the theme, and it always becomes `colors.background`
+ * @returns the theme components draw with; a theme name missing from `themes` falls back to `dark`
+ */
+export const resolveTheme = (config: Pick<Config, "themes" | "iconSets" | "tokens"> & { settings: { theme: string; icons: string } }, background: string | undefined): Theme => {
+  const name = config.settings.theme === "auto" ? autoTheme(background) : config.settings.theme
+  const theme = (config.themes[name] ?? config.themes.dark) as Theme
+  const overrides = config.tokens
+  const colors = { ...theme.colors, ...overrides.colors }
   return {
-    type: theme?.type === "light" ? "light" : "dark",
-    colors: fallback.colors,
-    tokenColors: [...fallback.tokenColors, ...customizationRules(customizations), ...customizationRules(customizations?.[`[${name}]`] as Record<string, unknown> | undefined)],
-  } as ThemeRegistrationAny
+    colors: background ? { ...colors, background } : colors,
+    glyphs: { ...theme.glyphs, ...config.iconSets[config.settings.icons], ...overrides.glyphs },
+    spacing: { ...theme.spacing, ...overrides.spacing },
+  }
 }

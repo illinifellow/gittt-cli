@@ -5,7 +5,10 @@
  */
 import { describe, expect, it } from "vitest"
 import { layoutGraph } from "@/graph"
+import { loadDefaults } from "@/config"
 import { drawCells } from "@/lanes"
+
+const GRAPH = loadDefaults().themes.dark.glyphs!.graph!
 import { DEFAULT_COLUMNS } from "./columns"
 import { graphWidth } from "@/ui/log"
 
@@ -47,13 +50,13 @@ describe("drawCells", () => {
   /** A merge row draws its node, a horizontal run and a corner turning down into the new lane. */
   it("draws a merge with a corner", () => {
     const [row] = layoutGraph([commit("m", "a", "f")])
-    expect(drawCells(row, "plain").map(cell => cell.char).join("").trimEnd()).toBe("●─╮")
+    expect(drawCells(row, "plain", GRAPH).map(cell => cell.char).join("").trimEnd()).toBe("●─╮")
   })
 
   /** The fork row draws the incoming lane bending up-left into the node. */
   it("draws a fork with a closing corner", () => {
     const rows = layoutGraph([commit("m", "a", "f"), commit("f", "a"), commit("a")])
-    expect(drawCells(rows[2], "head").map(cell => cell.char).join("").trimEnd()).toBe("◉─╯")
+    expect(drawCells(rows[2], "head", GRAPH).map(cell => cell.char).join("").trimEnd()).toBe("◉─╯")
   })
 })
 

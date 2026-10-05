@@ -1,10 +1,11 @@
 /**
  * Turns a graph row (lanes and edges from the graph layout) into terminal
- * cells drawn with box-drawing characters: two cells per lane, the lane's line
- * in the first and horizontal runs through the second, rounded corners where a
- * branch forks or merges.
+ * cells: two cells per lane, the lane's line in the first and horizontal runs
+ * through the second, corners where a branch forks or merges. The characters
+ * come from the theme.
  */
 import type { GraphRow } from "@/graph"
+import type { GlyphTokens } from "@/theme"
 
 /** One terminal cell of the graph column. */
 interface Cell {
@@ -18,18 +19,20 @@ const DOWN = 2
 const LEFT = 4
 const RIGHT = 8
 
-const GLYPHS: Record<number, string> = {
-  [UP | DOWN]: "│", [LEFT | RIGHT]: "─", [UP | LEFT]: "╯", [UP | RIGHT]: "╰", [DOWN | LEFT]: "╮", [DOWN | RIGHT]: "╭",
-  [UP | DOWN | LEFT]: "┤", [UP | DOWN | RIGHT]: "├", [UP | LEFT | RIGHT]: "┴", [DOWN | LEFT | RIGHT]: "┬", [UP | DOWN | LEFT | RIGHT]: "┼",
-  [UP]: "╵", [DOWN]: "╷", [LEFT]: "─", [RIGHT]: "─",
-}
+/** @returns the character for a set of connections, from the theme's graph glyphs */
+const glyphFor = (mask: number, graph: GlyphTokens["graph"]) => ({
+  [UP | DOWN]: graph.vertical, [LEFT | RIGHT]: graph.horizontal, [UP | LEFT]: graph.upLeft, [UP | RIGHT]: graph.upRight, [DOWN | LEFT]: graph.downLeft, [DOWN | RIGHT]: graph.downRight,
+  [UP | DOWN | LEFT]: graph.teeLeft, [UP | DOWN | RIGHT]: graph.teeRight, [UP | LEFT | RIGHT]: graph.teeUp, [DOWN | LEFT | RIGHT]: graph.teeDown, [UP | DOWN | LEFT | RIGHT]: graph.cross,
+  [UP]: graph.endUp, [DOWN]: graph.endDown, [LEFT]: graph.horizontal, [RIGHT]: graph.horizontal,
+} as Record<number, string>)[mask] ?? graph.cross
 
 /**
  * @param row the row's lanes and edges
- * @param marker node look: `head` ◉, `working` ◌, otherwise ●
+ * @param marker node look: `head`, `working` or a plain commit
+ * @param graph the theme's graph characters
  * @returns two cells per lane
  */
-export const drawCells = (row: GraphRow, marker: "head" | "working" | "plain"): Cell[] => {
+export const drawCells = (row: GraphRow, marker: "head" | "working" | "plain", graph: GlyphTokens["graph"]): Cell[] => {
   const width = row.width * 2
   const masks = new Array<number>(width).fill(0)
   const colors = new Array<number | null>(width).fill(null)
@@ -57,7 +60,7 @@ export const drawCells = (row: GraphRow, marker: "head" | "working" | "plain"): 
     }
   }
   return masks.map((mask, cell) => {
-    if (cell === row.column * 2) return { char: marker === "head" ? "◉" : marker === "working" ? "◌" : "●", color: marker === "working" ? null : row.color }
-    return { char: mask ? GLYPHS[mask] ?? "┼" : " ", color: colors[cell] }
+    if (cell === row.column * 2) return { char: marker === "head" ? graph.head : marker === "working" ? graph.working : graph.node, color: marker === "working" ? null : row.color }
+    return { char: mask ? glyphFor(mask, graph) : " ", color: colors[cell] }
   })
 }

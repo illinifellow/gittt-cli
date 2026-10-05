@@ -9,8 +9,10 @@ import { Box, Text } from "ink"
 import type { MouseEvent } from "@/mouse"
 import { Clickable } from "@/mouse/regions"
 import type { Repository } from "@/protocol"
-import { ICONS } from "./icons"
+import type { KeyBindings } from "@/config"
+import type { GlyphTokens } from "@/theme"
 import { fit, mix, slide, widthOf, type Palette } from "./text"
+import { useTheme } from "./theme"
 import { windowStart } from "./window"
 
 /** A right-aligned extra on a row; pills sit on a tinted ground. */
@@ -46,19 +48,15 @@ export interface TreeNode {
  */
 export const sectionKey = (path: string, section: string) => `${path}|${section}`
 
-/** Catalogue buttons above the sidebar list, with their keys. */
-const TREE_ACTIONS = [
-  { action: "add", label: "＋ Add", key: "a" },
-  { action: "rescan", label: "⟳ Rescan", key: "r" },
-  { action: "up", label: "↑", key: "K" },
-  { action: "down", label: "↓", key: "J" },
-] as const
+/** Catalogue buttons above the sidebar list. */
+const TREE_ACTIONS = ["add", "rescan", "up", "down"] as const
 
-const GLYPHS: Record<TreeNode["kind"], string> = {
-  repository: `${ICONS.repository}`, section: "", workspace: "", remoteGroup: `${ICONS.remote}`, branch: `${ICONS.branch}`, remote: `${ICONS.branch}`, tag: `${ICONS.tag}`, stash: `${ICONS.stash}`, error: `${ICONS.alert}`,
+/** @returns the icon a row kind shows */
+const glyphOf = (node: TreeNode, glyphs: GlyphTokens) => {
+  if (node.kind === "section") return ({ WORKSPACE: glyphs.workspace, BRANCHES: glyphs.branch, REMOTES: glyphs.remote, TAGS: glyphs.tag, STASHES: glyphs.stash } as Record<string, string>)[node.label] ?? ""
+  if (node.kind === "workspace") return node.view === "status" ? glyphs.fileStatus : node.view === "history" ? glyphs.history : glyphs.search
+  return { repository: glyphs.repository, remoteGroup: glyphs.remote, branch: glyphs.branch, remote: glyphs.branch, tag: glyphs.tag, stash: glyphs.stash, error: glyphs.alert }[node.kind] ?? ""
 }
-const SECTION_GLYPHS: Record<string, string> = { WORKSPACE: `${ICONS.workspace}`, BRANCHES: `${ICONS.branch}`, REMOTES: `${ICONS.remote}`, TAGS: `${ICONS.tag}`, STASHES: `${ICONS.stash}` }
-const WORKSPACE_GLYPHS = { status: `${ICONS.status}`, history: `${ICONS.history}`, search: `${ICONS.search}` }
 
 const matches = (text: string, filter: string) => !filter || text.toLowerCase().includes(filter)
 
@@ -68,9 +66,10 @@ const matches = (text: string, filter: string) => !filter || text.toLowerCase().
  * @param expanded keys of open nodes
  * @param filterText filter typed by the user
  * @param palette colours for counts
+ * @param glyphs ahead, behind and branch marks
  * @returns rows top to bottom
  */
-export const flattenTree = (repositories: Repository[], expanded: Set<string>, filterText: string, palette: Palette): TreeNode[] => {
+export const flattenTree = (repositories: Repository[], expanded: Set<string>, filterText: string, palette: Palette, glyphs: GlyphTokens): TreeNode[] => {
   const filter = filterText.trim().toLowerCase()
   const nodes: TreeNode[] = []
   for (const repository of repositories) {
@@ -86,9 +85,9 @@ export const flattenTree = (repositories: Repository[], expanded: Set<string>, f
     const current = repository.branches.find(branch => branch.current)
     nodes.push({ key: path, kind: "repository", depth: 0, label: repository.name, path, toggle: path, open: isOpen(path), meta: [
       ...(repository.changes ? [{ text: String(repository.changes), color: palette.modified, pill: true }] : []),
-      ...(current?.ahead ? [{ text: `${current.ahead}↑`, color: palette.added, pill: true }] : []),
-      ...(current?.behind ? [{ text: `${current.behind}↓`, color: palette.stash, pill: true }] : []),
-      { text: `${ICONS.branch} ${repository.head.branch ?? repository.head.hash?.slice(0, 7) ?? "empty"}`, color: palette.head },
+      ...(current?.ahead ? [{ text: `${current.ahead}${glyphs.ahead}`, color: palette.added, pill: true }] : []),
+      ...(current?.behind ? [{ text: `${current.behind}${glyphs.behind}`, color: palette.stash, pill: true }] : []),
+      { text: `${glyphs.branch} ${repository.head.branch ?? repository.head.hash?.slice(0, 7) ?? "empty"}`, color: palette.head },
     ] })
     if (!isOpen(path)) continue
     if (repository.error) nodes.push({ key: `${path}#error`, kind: "error", depth: 1, label: repository.error, path })
@@ -106,8 +105,8 @@ export const flattenTree = (repositories: Repository[], expanded: Set<string>, f
       for (const branch of branches)
         nodes.push({ key: `${path}#b:${branch.name}`, kind: "branch", depth: 2, label: branch.name, path, ref: branch.name, hash: branch.hash, current: branch.current, meta: [
           ...(branch.gone ? [{ text: "gone", color: palette.stash }] : []),
-          ...(branch.ahead ? [{ text: `${branch.ahead}↑`, color: palette.added, pill: true }] : []),
-          ...(branch.behind ? [{ text: `${branch.behind}↓`, color: palette.stash, pill: true }] : []),
+          ...(branch.ahead ? [{ text: `${branch.ahead}${glyphs.ahead}`, color: palette.added, pill: true }] : []),
+          ...(branch.behind ? [{ text: `${branch.behind}${glyphs.behind}`, color: palette.stash, pill: true }] : []),
         ] })
     if (section("remotes", "REMOTES", remotes.length))
       for (const remote of remotes) {
@@ -133,7 +132,7 @@ export interface TreeEvents {
   onMove: (index: number, rows: number) => void
   onWheel: (step: number, event: MouseEvent) => void
   onFilter: () => void
-  onAction: (action: (typeof TREE_ACTIONS)[number]["action"]) => void
+  onAction: (action: (typeof TREE_ACTIONS)[number]) => void
 }
 
 /**
@@ -147,10 +146,10 @@ export interface TreeEvents {
  * @param props.filter filter text
  * @param props.filtering whether the filter is being typed
  * @param props.scrollX cells the labels scrolled sideways
- * @param props.palette colours
+ * @param props.keys the keys shown on the catalogue buttons
  * @param props.events row gestures, twisty clicks, repository drags, buttons, wheel and filter clicks
  */
-export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, filter, filtering, scrollX, palette, events }: {
+export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, filter, filtering, scrollX, keys, events }: {
   nodes: TreeNode[]
   cursor: number
   selectedPath: string | null
@@ -160,9 +159,11 @@ export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, 
   filter: string
   filtering: boolean
   scrollX: number
-  palette: Palette
+  keys: Pick<KeyBindings, "add" | "rescan" | "moveUp" | "moveDown">
   events: TreeEvents
 }) => {
+  const { colors: palette, glyphs, spacing } = useTheme()
+  const buttons: Record<(typeof TREE_ACTIONS)[number], [string, string]> = { add: [`${glyphs.add} Add`, keys.add], rescan: [`${glyphs.rescan} Rescan`, keys.rescan], up: [glyphs.moveUp, keys.moveUp], down: [glyphs.moveDown, keys.moveDown] }
   const showFilter = filtering || Boolean(filter)
   const listHeight = Math.max(1, height - 1 - (showFilter ? 1 : 0))
   const start = windowStart(cursor, nodes.length, listHeight, 1 / 2)
@@ -170,9 +171,9 @@ export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, 
   return (
     <Clickable flexDirection="column" width={width} height={height} onWheel={events.onWheel}>
       <Box height={1} overflow="hidden">
-        {TREE_ACTIONS.map(item => (
-          <Clickable key={item.action} onClick={() => events.onAction(item.action)}>
-            <Text> <Text color={palette.accent}>{item.label}</Text><Text color={palette.textMuted}> {item.key}</Text> </Text>
+        {TREE_ACTIONS.map(action => (
+          <Clickable key={action} onClick={() => events.onAction(action)}>
+            <Text> <Text color={palette.accent}>{buttons[action][0]}</Text><Text color={palette.textMuted}> {buttons[action][1]}</Text> </Text>
           </Clickable>
         ))}
       </Box>
@@ -181,11 +182,11 @@ export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, 
           const index = start + offset
           const atCursor = index === cursor
           const selectedRepository = node.kind === "repository" && node.path === selectedPath
-          const background = atCursor ? (focused ? palette.selection : palette.border) : selectedRepository ? mix(palette.accent, palette.background, 0.12) : undefined
-          const indent = " ".repeat(node.depth * 2)
-          const twisty = node.toggle ? (node.open ? "▾ " : "▸ ") : "  "
-          const glyph = node.kind === "section" ? SECTION_GLYPHS[node.label] ?? "" : node.kind === "workspace" && node.view ? WORKSPACE_GLYPHS[node.view] : GLYPHS[node.kind]
-          const bullet = node.kind === "branch" ? (node.current ? "● " : "  ") : ""
+          const background = atCursor ? (focused ? palette.selection : palette.selectionInactive) : selectedRepository ? palette.repositoryRow : undefined
+          const indent = " ".repeat(node.depth * spacing.indent)
+          const twisty = node.toggle ? `${node.open ? glyphs.open : glyphs.closed} ` : "  "
+          const glyph = glyphOf(node, glyphs)
+          const bullet = node.kind === "branch" ? (node.current ? `${glyphs.currentBranch} ` : "  ") : ""
           const metaWidth = (node.meta ?? []).reduce((total, part) => total + 1 + widthOf(part.pill ? ` ${part.text} ` : part.text), 0)
           const fixed = indent.length + 2 + widthOf(bullet) + (glyph ? widthOf(glyph) + 1 : 0) + metaWidth + 1
           const labelWidth = Math.max(1, width - fixed)
@@ -204,7 +205,7 @@ export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, 
                 {(node.meta ?? []).map((part, partIndex) => (
                   <Text key={partIndex}>
                     <Text> </Text>
-                    {part.pill ? <Text backgroundColor={mix(part.color, palette.background, 0.3)} color={part.color} bold>{` ${part.text} `}</Text> : <Text color={part.color}>{part.text}</Text>}
+                    {part.pill ? <Text backgroundColor={mix(part.color, palette.background, palette.labelGround)} color={part.color} bold>{` ${part.text} `}</Text> : <Text color={part.color}>{part.text}</Text>}
                   </Text>
                 ))}
                 <Text> </Text>
@@ -215,7 +216,7 @@ export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, 
       </Box>
       {showFilter ? (
         <Clickable height={1} onClick={events.onFilter}>
-          <Text color={palette.accent} backgroundColor={mix(palette.text, palette.background, 0.08)}>{fit(` / ${filter}${filtering ? "▏" : ""}`, width)}</Text>
+          <Text color={palette.accent} backgroundColor={palette.field}>{fit(` ${glyphs.search} ${filter}${filtering ? glyphs.cursor : ""}`, width)}</Text>
         </Clickable>
       ) : null}
     </Clickable>
