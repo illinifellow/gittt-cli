@@ -48,11 +48,13 @@ Every repository under a folder in one sidebar, a commit graph, changed files an
 
 ## Install
 
-From GitHub:
+The latest release from GitHub:
 
 ```sh
-npm install --global github:illinifellow/gittt-cli
+npm install --global https://github.com/illinifellow/gittt-cli/releases/latest/download/gittt-cli.tgz
 ```
+
+A running gittt shows **Update** at the right end of the toolbar when a newer release exists; a click installs it and restarts in place.
 
 From a clone:
 
