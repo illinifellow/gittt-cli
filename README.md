@@ -35,7 +35,7 @@ Every repository under a folder in one sidebar, a commit graph, changed files an
 - **Commit graph:** lanes in their own colours, merges and forks drawn with rounded corners. Branch, remote and tag labels sit on tinted grounds.
 - **Live:** edits, commits, checkouts, fetches and new refs show up within about a second.
 - **States made visible:** uncommitted changes, a rebase, merge, cherry-pick, revert or bisect stopped half way, conflicts, a detached HEAD.
-- **Files and diffs:** sorted by path, by status or as a tree, with old and new line numbers. Code is highlighted in the colours of your VS Code theme.
+- **Files and diffs:** sorted by path, by status or as a tree, with old and new line numbers. Code is highlighted in the colours of your VS Code theme or the theme's own.
 - **A dialog for every action:** fetch, pull, push, branch, merge, stash, tag, checkout, reset, rebase, cherry-pick, revert and more.
 - **Mouse everywhere:** clicks, double clicks, right-click menus, wheel and sideways scrolling, draggable dividers and columns, text selection in diffs.
 - **Fast on large files:** highlighting runs in pieces that never block input.
@@ -167,7 +167,7 @@ The two are merged on start. Toggles and drags in the app write the user file; i
 
 ### Themes
 
-Two themes ship: **golden-brown** (the default, warm orange on brown-tinted grounds) and **light**. `settings.theme` is `auto` by default: gittt asks the terminal for its background and picks `light` on a light one and `golden-brown` otherwise. A theme of your own is another entry under `themes`; anything it leaves out comes from the shipped themes.
+Two themes ship: **golden-brown** (dark, warm orange on brown-tinted grounds) and **milk-and-honey** (light, warm milky grounds with an amber accent). `settings.theme` is `auto` by default: gittt asks the terminal for its background and picks milk-and-honey on a light one and golden-brown otherwise. Each theme paints its own background and names its code highlighting in `syntax`: `vscode` for the editor's theme, or a bundled theme such as `light-plus`. A theme of your own is another entry under `themes`; anything it leaves out comes from the shipped themes.
 
 - `colors`: background, text, muted text, borders, accent, selections, header and field grounds, branch, current branch, remote, tag, HEAD, stash, file states, diff grounds, label and pill colours, and `lanes` (the graph palette).
 - `glyphs`: every icon, mark and graph character (nodes, lines, corners, checkboxes, radio buttons, folders, file states).

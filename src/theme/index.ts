@@ -1,8 +1,8 @@
 /**
  * Themes: every colour, glyph and spacing value gittt draws with, as named
- * tokens. The themes themselves live in `config/default.json` (dark and light
- * ship; `auto` picks one by the terminal's background) and can be changed or
- * added in the user config; its `tokens` section overrides single values on top
+ * tokens. The themes themselves live in `config/settings.json` (golden-brown and
+ * milk-and-honey ship; `auto` picks one by the terminal's background) and can be
+ * changed or added in the user settings; its `tokens` section overrides single values on top
  * of the active theme. Components read the resolved theme and hold no literals.
  */
 
@@ -112,6 +112,9 @@ export interface ThemeOverrides {
 /** The theme used on dark terminals and when a named theme does not exist. */
 export const DEFAULT_THEME = "golden-brown"
 
+/** The theme `auto` picks on light terminals. */
+export const LIGHT_THEME = "milk-and-honey"
+
 /** Luminance of a `#rrggbb` colour, 0 (black) to 1 (white). */
 const luminance = (color: string) => {
   const [red, green, blue] = [1, 3, 5].map(index => parseInt(color.slice(index, index + 2), 16) / 255)
@@ -121,9 +124,9 @@ const luminance = (color: string) => {
 /**
  * Picks the theme name for `auto`.
  * @param background the terminal background, if it answered
- * @returns `light` on a light background, the default theme otherwise
+ * @returns the light theme on a light background, the default theme otherwise
  */
-export const autoTheme = (background: string | undefined) => background && luminance(background) > 0.5 ? "light" : DEFAULT_THEME
+export const autoTheme = (background: string | undefined) => background && luminance(background) > 0.5 ? LIGHT_THEME : DEFAULT_THEME
 
 /**
  * Builds the active theme from the configuration.
