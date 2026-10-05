@@ -50,8 +50,10 @@ const parseStatus = (output: string): ChangedFile[] => {
     const code = entry.slice(0, 2)
     const renamed = code[0] === "R" || code[0] === "C"
     const previousPath = renamed ? entries[++index] : null
-    const status = CONFLICT_CODES.has(code) ? "U" : code[0] === "?" ? "?" : code[0] !== " " ? code[0] : code[1]
-    files.push({ status, path: entry.slice(3), previousPath })
+    const conflicted = CONFLICT_CODES.has(code)
+    const untracked = code[0] === "?"
+    const status = conflicted ? "U" : untracked ? "?" : code[0] !== " " ? code[0] : code[1]
+    files.push({ status, path: entry.slice(3), previousPath, staged: !conflicted && !untracked && code[0] !== " ", unstaged: untracked || conflicted || code[1] !== " " })
   }
   return files
 }
@@ -92,6 +94,7 @@ export const readRepository = async (path: string): Promise<Repository> => {
     name: basename(path),
     head: { branch: null, hash: null },
     changes: 0,
+    staged: 0,
     conflicts: 0,
     operation: null,
     branches: [],
@@ -112,6 +115,7 @@ export const readRepository = async (path: string): Promise<Repository> => {
     repository.head = { branch: symbolic.trim() || null, hash: head.trim() || null }
     const files = parseStatus(status)
     repository.changes = files.length
+    repository.staged = files.filter(file => file.staged).length
     repository.conflicts = files.filter(file => file.status === "U").length
     repository.operation = await readOperation(gitDirectory.trim())
     const remotes = new Map<string, Repository["remotes"][number]>()
@@ -184,7 +188,7 @@ const parseNameStatus = (output: string): ChangedFile[] => {
     const status = parts[index][0]
     const renamed = status === "R" || status === "C"
     const previousPath = renamed ? parts[++index] : null
-    files.push({ status, path: parts[++index], previousPath })
+    files.push({ status, path: parts[++index], previousPath, staged: false, unstaged: false })
   }
   return files
 }
@@ -244,4 +248,20 @@ export const readDiff = async (path: string, hash: string, file: ChangedFile, ma
   }
   const maxLength = maxKilobytes * 1024
   return text.length > maxLength ? `${text.slice(0, maxLength)}\n\\ diff cut at ${maxKilobytes} KB` : text
+}
+
+/**
+ * Reads a whole file as it is in the working tree or in a commit.
+ * @param path repository root
+ * @param hash commit hash, or `WORKING_TREE` for the file on disk
+ * @param file the file; a file deleted in the commit is read from its parent
+ * @param maxKilobytes longer files are cut there
+ * @returns the file's text
+ */
+export const readWholeFile = async (path: string, hash: string, file: ChangedFile, maxKilobytes: number) => {
+  const text = hash === WORKING_TREE
+    ? await readFile(join(path, file.path), "utf8").catch(() => runGit(path, ["show", `HEAD:${file.previousPath ?? file.path}`]))
+    : await runGit(path, ["show", `${file.status === "D" ? `${hash}~` : hash}:${file.path}`])
+  const maxLength = maxKilobytes * 1024
+  return text.length > maxLength ? text.slice(0, maxLength) : text
 }

@@ -43,6 +43,8 @@ export interface Repository {
   head: { branch: string | null; hash: string | null }
   /** Count of changed and untracked entries in the working tree. */
   changes: number
+  /** Count of entries with changes in the index, ready to commit. */
+  staged: number
   /** Count of unmerged (conflicted) paths. */
   conflicts: number
   /** A rebase, merge, cherry-pick, revert or bisect stopped half way, or `null`. */
@@ -83,6 +85,10 @@ export interface ChangedFile {
   status: string
   path: string
   previousPath: string | null
+  /** Working tree only: the index holds changes of this file. */
+  staged: boolean
+  /** Working tree only: the file has changes the index does not hold (untracked files included). */
+  unstaged: boolean
 }
 
 /** A commit's metadata and changed files; for the working tree the author fields are empty. */

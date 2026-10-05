@@ -41,7 +41,7 @@ export interface DialogSpec {
 
 /** Every dialog gittt offers. */
 export type DialogKind =
-  | "fetch" | "pull" | "push" | "branch" | "deleteBranches" | "merge" | "stash" | "tag"
+  | "commit" | "fetch" | "pull" | "push" | "branch" | "deleteBranches" | "merge" | "stash" | "tag"
   | "checkout" | "checkoutRemote" | "deleteBranch" | "deleteTag" | "renameBranch" | "reset"
   | "rebase" | "cherryPick" | "revert" | "stashApply" | "stashPop" | "stashDrop" | "pushTag"
 
@@ -83,6 +83,16 @@ export const buildDialog = (kind: DialogKind, repository: Repository, target: Di
   const remote = preferredRemote(repository)
   const targetName = target.ref ?? short(target.hash)
   switch (kind) {
+    case "commit": {
+      const upstream = current?.upstream ?? (remote && current ? `${remote}/${current.name}` : "")
+      return { kind, title: "Commit", submit: "Commit", fields: [
+        { type: "info", label: "Branch", text: headLabel(repository) },
+        { type: "info", label: "Staged", text: `${repository.staged} file${repository.staged === 1 ? "" : "s"}` },
+        { type: "text", key: "message", label: "Message", value: "", placeholder: "what this commit changes" },
+        { type: "checkbox", key: "amend", label: "Amend last commit", value: false, warning: "Replaces the last commit; pushing it rewrites the remote branch" },
+        { type: "checkbox", key: "push", label: upstream ? `Push immediately to ${upstream}` : "Push immediately", value: false },
+      ] }
+    }
     case "fetch":
       return { kind, title: "Fetch", submit: "OK", fields: [
         { type: "checkbox", key: "all", label: "Fetch from all remotes", value: true },
@@ -244,9 +254,14 @@ const list = (values: DialogValues, key: string) => Array.isArray(values[key]) ?
  * Checks submitted values before running anything.
  * @param spec the dialog that was shown
  * @param values submitted values
+ * @param repository the repository, for checks that depend on its state (staged files for a commit)
  * @returns a message naming the first problem, or `null`
  */
-export const validateDialog = (spec: DialogSpec, values: DialogValues) => {
+export const validateDialog = (spec: DialogSpec, values: DialogValues, repository?: Repository) => {
+  if (spec.kind === "commit" && !flag(values, "amend")) {
+    if (!text(values, "message")) return "Write a commit message"
+    if (repository && repository.staged === 0) return "Stage at least one file: tick its checkbox in the file list"
+  }
   for (const field of spec.fields) {
     if (field.type === "text" && field.required && !text(values, field.key)) return `${field.label} is required`
     if (field.type === "text" && field.required && /\s/.test(text(values, field.key)) && spec.kind !== "stash") return `${field.label} holds no spaces`
@@ -268,6 +283,14 @@ export const dialogCommands = (spec: DialogSpec, values: DialogValues, repositor
   const remote = text(values, "remote") || preferredRemote(repository)
   const mergeOptions = [...(flag(values, "commit") ? [] : ["--no-commit"]), ...(flag(values, "log") ? ["--log"] : []), ...(flag(values, "noFastForward") ? ["--no-ff"] : [])]
   switch (spec.kind) {
+    case "commit": {
+      const message = text(values, "message")
+      const commit = ["commit", ...(flag(values, "amend") ? ["--amend"] : []), ...(message ? ["-m", message] : ["--no-edit"])]
+      if (!flag(values, "push")) return [commit]
+      const branch = repository.branches.find(candidate => candidate.current)
+      if (!branch) return [commit]
+      return [commit, branch.upstream ? ["push", ...(flag(values, "amend") ? ["--force-with-lease"] : [])] : ["push", "--set-upstream", remote, branch.name]]
+    }
     case "fetch":
       return [["fetch", ...(flag(values, "all") ? ["--all"] : [remote]), ...(flag(values, "prune") ? ["--prune"] : []), ...(flag(values, "tags") ? ["--tags"] : [])]]
     case "pull":
