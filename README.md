@@ -10,7 +10,7 @@ Every repository under a folder in one sidebar, a commit graph, changed files an
 [![License: MIT](https://img.shields.io/badge/license-MIT-ff905c.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-88bd66.svg)](https://nodejs.org)
 
-![gittt showing the express repository: the sidebar with three repositories, the commit graph with branch and tag labels, the files of a release commit and its highlighted diff](.github/screenshot.png)
+<img width="900" alt="gittt showing the express repository: the sidebar with three repositories, the commit graph with branch and tag labels, the files of a release commit and its highlighted diff" src="https://github.com/user-attachments/assets/84cbe9ee-41c6-4da9-8536-00612ea7e895" />
 
 </div>
 
