@@ -1,34 +1,13 @@
-<div align="center">
-
 # gittt
 
-**A git browser for the terminal.**
+**A git browser for the terminal.** Every repository under a folder in one sidebar, a commit graph, changed files and highlighted diffs, a dialog for every action, and full mouse support.
 
-Every repository under a folder in one sidebar, a commit graph, changed files and highlighted diffs, a dialog for every action, and full mouse support.
-
-[![CI](https://github.com/illinifellow/gittt-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/illinifellow/gittt-cli/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-ff905c.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20-88bd66.svg)](https://nodejs.org)
+[![CI](https://img.shields.io/github/actions/workflow/status/illinifellow/gittt-cli/ci.yml?label=CI)](https://github.com/illinifellow/gittt-cli/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-ff905c)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-88bd66)](https://nodejs.org)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-ffdd04?logo=buymeacoffee&logoColor=000)](https://buymeacoffee.com/illinifellow)
 
-<img width="900" alt="gittt in the golden-brown theme on a dark terminal: the sidebar with three repositories, the commit graph of chalk with branch and tag labels, the pending files with checkboxes and the diff of the staged one" src="https://github.com/user-attachments/assets/01ab6cfb-6138-458a-af38-02e8b9f1ffda" />
-
-</div>
-
-## Contents
-
-- [Features](#features)
-- [Requirements](#requirements)
-- [Install](#install)
-- [Run](#run)
-- [The screen](#the-screen)
-- [Dialogs](#dialogs)
-- [Keyboard](#keyboard)
-- [Mouse](#mouse)
-- [Configuration](#configuration)
-- [Development](#development)
-- [Contributing](#contributing)
-- [License](#license)
+![gittt in the golden-brown theme on a dark terminal: the sidebar with three repositories, the commit graph of chalk with branch and tag labels, the pending files with checkboxes and the diff of the staged one](https://github.com/user-attachments/assets/01ab6cfb-6138-458a-af38-02e8b9f1ffda)
 
 ## Features
 
@@ -175,7 +154,7 @@ The two are merged on start. Toggles and drags in the app write the user file; i
 
 ### Themes
 
-<img width="700" alt="The same screen in the light milk-and-honey theme" src="https://github.com/user-attachments/assets/d3186946-4935-45b7-bee9-d481b50db0c3" />
+<img data-cover alt="The same screen in the light milk-and-honey theme" src="https://github.com/user-attachments/assets/d3186946-4935-45b7-bee9-d481b50db0c3" />
 
 Two themes ship: **golden-brown** (dark, warm orange on brown-tinted grounds) and **milk-and-honey** (light, warm milky grounds with an amber accent). `settings.theme` is `auto` by default: gittt asks the terminal for its background and picks milk-and-honey on a light one and golden-brown otherwise. golden-brown is drawn on the terminal's own background (its `background` is `transparent`); milk-and-honey paints its milky ground so it stays readable on any terminal. Each theme names its code highlighting in `syntax`: `vscode` for the editor's theme, or a bundled theme such as `light-plus`. A theme of your own is another entry under `themes`; anything it leaves out comes from the shipped themes.
 
