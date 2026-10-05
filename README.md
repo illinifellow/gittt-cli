@@ -9,6 +9,7 @@ Every repository under a folder in one sidebar, a commit graph, changed files an
 [![CI](https://github.com/illinifellow/gittt-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/illinifellow/gittt-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-ff905c.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-88bd66.svg)](https://nodejs.org)
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-ffdd04?logo=buymeacoffee&logoColor=000)](https://buymeacoffee.com/illinifellow)
 
 <img width="900" alt="gittt in the golden-brown theme on a dark terminal: the sidebar with three repositories, the commit graph of chalk with branch and tag labels, the pending files with checkboxes and the diff of the staged one" src="https://github.com/user-attachments/assets/01ab6cfb-6138-458a-af38-02e8b9f1ffda" />
 
@@ -150,6 +151,8 @@ Checking out a local branch needs no dialog. Errors from git show in the toolbar
 | `⌥` drag (iTerm2)       | the terminal's own selection anywhere                                                  |
 
 ## Configuration
+
+The **Settings** dialog (`,` or the toolbar) edits the everyday options: theme, icons, file view, branches, order, dates, remote branches, compact rows, gitmoji, how many commits to show, how deep to search, folders to skip, the diff limit, the double-click time and the recent-folder count. Its last box puts every setting back to its default, and its yellow button opens [Buy Me a Coffee](https://buymeacoffee.com/illinifellow).
 
 All configuration lives in one file, `settings.json`, in two places of the same shape:
 
