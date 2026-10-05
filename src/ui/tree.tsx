@@ -182,7 +182,7 @@ export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, 
           const index = start + offset
           const atCursor = index === cursor
           const selectedRepository = node.kind === "repository" && node.path === selectedPath
-          const background = atCursor ? (focused ? palette.selection : palette.selectionInactive) : selectedRepository ? palette.repositoryRow : undefined
+          const background = atCursor ? (focused ? palette.selection : palette.selectionInactive) : undefined
           const indent = " ".repeat(node.depth * spacing.indent)
           const twisty = node.toggle ? `${node.open ? glyphs.open : glyphs.closed} ` : "  "
           const glyph = glyphOf(node, glyphs)
@@ -204,7 +204,7 @@ export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, 
               <Text backgroundColor={background} wrap="truncate-end">
                 {bullet ? <Text color={palette.accent}>{bullet}</Text> : null}
                 {glyph ? <Text color={node.kind === "repository" ? palette.accent : palette.textMuted}>{glyph} </Text> : null}
-                <Text color={node.kind === "section" ? palette.textMuted : node.kind === "error" ? palette.stash : palette.text} bold={node.kind === "repository" || node.current}>{fit(slide(node.label, scrollX), labelWidth)}</Text>
+                <Text color={node.kind === "section" ? palette.textMuted : node.kind === "error" ? palette.stash : selectedRepository && !atCursor ? palette.accent : palette.text} bold={node.kind === "repository" || node.current}>{fit(slide(node.label, scrollX), labelWidth)}</Text>
                 {meta.map((part, partIndex) => (
                   <Text key={partIndex}>
                     <Text> </Text>
