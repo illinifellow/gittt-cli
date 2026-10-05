@@ -34,7 +34,7 @@ export const MenuBox = ({ state, width, height, onChoose, onClose }: { state: Me
   const boxWidth = Math.min(spacing.menuWidth, width - 4)
   return (
     <Clickable width={width} height={height} justifyContent="center" alignItems="flex-start" paddingTop={2} onClick={onClose} onRightClick={onClose}>
-      <Box flexDirection="column" width={boxWidth} borderStyle="round" borderColor={palette.accent}>
+      <Box flexDirection="column" width={boxWidth} borderStyle="round" borderColor={palette.accent} borderBackgroundColor={palette.background} backgroundColor={palette.background}>
         <Text bold color={palette.textMuted}>{fit(` ${state.title}`, boxWidth - 2)}</Text>
         {state.items.map((item, index) => (
           <Box key={item.label} flexDirection="column">

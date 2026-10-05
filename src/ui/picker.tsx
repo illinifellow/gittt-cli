@@ -80,10 +80,10 @@ export const FolderPicker = ({ initial, recent, onPick, width }: { initial: stri
   }, [])
   const boxWidth = Math.min(90, width - 4)
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1}>
+    <Box flexDirection="column" paddingX={2} paddingY={1} width={width} minHeight={process.stdout.rows ?? 24} backgroundColor={palette.background}>
       <Text color={palette.accent} bold>gittt</Text>
       <Text color={palette.text}>Where should gittt look for repositories?</Text>
-      <Box borderStyle="round" borderColor={palette.accent} width={boxWidth} marginTop={1}>
+      <Box borderStyle="round" borderColor={palette.accent} borderBackgroundColor={palette.background} backgroundColor={palette.background} width={boxWidth} marginTop={1}>
         <Text color={palette.text}>{fit(`${value}${glyphs.cursor}`, boxWidth - 2)}</Text>
       </Box>
       {error ? <Text color={palette.stash}>{glyphs.error} {error}</Text> : null}
