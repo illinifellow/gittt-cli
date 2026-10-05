@@ -48,7 +48,7 @@ export interface Limits {
 /** The whole configuration, defaults and user changes merged. */
 export interface Config {
   settings: ViewSettings & {
-    /** `auto` (by the terminal background), `dark`, `light`, or the name of a theme under `themes`. */
+    /** `auto` (by the terminal background), `golden-brown`, `light`, or the name of a theme under `themes`. */
     theme: string
     icons: string
     fileView: "path" | "status" | "tree"
@@ -141,7 +141,17 @@ const migrate = () => {
 export const loadConfig = (): Config => {
   migrate()
   const stored = readJson(USER_SETTINGS)
-  return merge(loadDefaults(), isObject(stored) ? stored : {})
+  return merge(loadDefaults(), isObject(stored) ? renameDarkTheme(stored) : {})
+}
+
+/** Carries settings written when the default theme was called `dark` over to `golden-brown`. */
+const renameDarkTheme = (stored: Record<string, unknown>) => {
+  if (isObject(stored.settings) && stored.settings.theme === "dark") stored.settings.theme = "golden-brown"
+  if (isObject(stored.themes) && "dark" in stored.themes && !("golden-brown" in stored.themes)) {
+    stored.themes["golden-brown"] = stored.themes.dark
+    delete stored.themes.dark
+  }
+  return stored
 }
 
 /**
@@ -152,7 +162,7 @@ export const saveConfig = (config: Config) => writeJson(USER_SETTINGS, differenc
 
 /**
  * Puts values back to their defaults; the remembered state is kept.
- * @param path keys down to the value or section to reset, e.g. `["themes", "dark", "colors", "accent"]`; empty resets every setting
+ * @param path keys down to the value or section to reset, e.g. `["themes", "golden-brown", "colors", "accent"]`; empty resets every setting
  * @returns the configuration after the reset
  */
 export const resetConfig = (path: string[] = []): Config => {

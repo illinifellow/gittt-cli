@@ -146,31 +146,32 @@ Checking out a local branch needs no dialog. Errors from git show in the toolbar
 
 ## Configuration
 
-`~/.config/gittt-cli/config.json` (or `$XDG_CONFIG_HOME/gittt-cli/config.json`) holds the view settings, column widths, recent folders and each folder's list (order, removed and added repositories). Toggles and drags in the app write it; it can also be edited by hand.
+All configuration lives in one file, `settings.json`, in two places of the same shape:
 
-| Setting              | Default                 | Meaning                                             |
-| -------------------- | ----------------------- | --------------------------------------------------- |
-| `branches`           | `all`                   | `all` branches and tags, or `current` only          |
-| `showRemoteBranches` | `true`                  | remote-tracking branches in the log                 |
-| `order`              | `ancestor`              | `ancestor` (topological) or `date`                  |
-| `compact`            | `false`                 | narrow graph, authors without email                 |
-| `dateFormat`         | `absolute`              | `absolute` (2 Oct 2026 at 14:05) or `relative`      |
-| `gitmoji`            | `true`                  | draw `:sparkles:` as its emoji                      |
-| `fileView`           | `path`                  | `path`, `status` or `tree`                          |
-| `maxCommits`         | `2000`                  | commits loaded per repository                       |
-| `scanDepth`          | `3`                     | folder levels searched                              |
-| `scanExclude`        | build and cache folders | folder names never entered                          |
-| `icons`              | `unicode`               | `unicode`, or `nerd` for terminals with a Nerd Font |
+| File                                    | Holds                                                                                                     |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `config/settings.json` (in the package) | every default: settings, limits, columns, keys, themes, icon sets                                         |
+| `~/.config/gittt-cli/settings.json`     | only what you changed, plus what gittt remembers (`state`: recent folders, each folder's repository list) |
 
-Colours live under `tokens`; only the ones that differ from the defaults are stored:
+The two are merged on start. Toggles and drags in the app write the user file; it can also be edited by hand, and removing a value puts it back to its default. `$XDG_CONFIG_HOME` moves the user file.
 
-- `accent` (`#ff905c`), `text`;
-- `branch`, `remote`, `tag`, `head`, `stash`;
-- `added`, `deleted`, `modified`, `renamed`, `untracked`;
-- `laneColors` (the graph palette);
-- `background`, `textMuted`, `border`, `selection`, `addedBackground`, `deletedBackground`.
+| Section    | What it holds                                                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings` | `theme`, `icons`, branches, remote branches, order, compact view, date format, gitmoji, file view, `maxCommits`, `scanDepth`, `scanExclude` |
+| `limits`   | diff size cap, highlighting batch and cache sizes, refresh delay, double-click time, status message times, watched paths to ignore          |
+| `columns`  | sidebar, graph, commit, author, date and files widths, lower panes' height (`null` sizes automatically)                                     |
+| `keys`     | the key for every action                                                                                                                    |
+| `themes`   | every theme in full: `colors`, `glyphs`, `spacing`                                                                                          |
+| `iconSets` | icon replacements, e.g. `nerd` for terminals with a Nerd Font                                                                               |
+| `tokens`   | single `colors`, `glyphs` or `spacing` values laid over the active theme                                                                    |
 
-The background is asked from the terminal at start, and the selection, border, label and diff tints are mixed from it unless set explicitly.
+### Themes
+
+Two themes ship: **golden-brown** (the default, warm orange on brown-tinted grounds) and **light**. `settings.theme` is `auto` by default: gittt asks the terminal for its background and picks `light` on a light one and `golden-brown` otherwise. A theme of your own is another entry under `themes`; anything it leaves out comes from the shipped themes.
+
+- `colors`: background, text, muted text, borders, accent, selections, header and field grounds, branch, current branch, remote, tag, HEAD, stash, file states, diff grounds, label and pill colours, and `lanes` (the graph palette).
+- `glyphs`: every icon, mark and graph character (nodes, lines, corners, checkboxes, radio buttons, folders, file states).
+- `spacing`: sidebar indent, toolbar gaps, dialog and menu widths, checklist rows, search field width.
 
 ## Development
 
