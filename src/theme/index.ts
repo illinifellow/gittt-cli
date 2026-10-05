@@ -17,7 +17,6 @@ export interface ColorTokens {
   accentText: string
   selection: string
   selectionInactive: string
-  repositoryRow: string
   header: string
   field: string
   branch: string
