@@ -1,16 +1,25 @@
 /**
  * Self-update: compares the running version with the latest GitHub release of
  * gittt-cli and installs a newer one in place. An npm-installed copy is
- * reinstalled from the release tag; a linked checkout pulls and rebuilds. The
+ * reinstalled from the tarball attached to the release; a linked checkout pulls and rebuilds. The
  * running gittt restarts by itself when its bundle changes on disk (`cli.tsx`).
  */
 import { execFile } from "node:child_process"
 import { existsSync, readFileSync, realpathSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { dirname, join, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
 /** The repository whose releases are checked and installed. */
 export const UPDATE_REPOSITORY = "illinifellow/gittt-cli"
+
+/**
+ * The built package attached to a release: `npm pack` output renamed to `gittt-cli.tgz`, so installing needs no build tools.
+ * @param version a release tag, or "latest"
+ * @returns the download URL
+ */
+export const releaseTarball = (version: string) => version === "latest"
+  ? `https://github.com/${UPDATE_REPOSITORY}/releases/latest/download/gittt-cli.tgz`
+  : `https://github.com/${UPDATE_REPOSITORY}/releases/download/${version}/gittt-cli.tgz`
 
 /** The package root of the running bundle: `dist/app.js` lives one folder below it. */
 const packageRoot = () => dirname(dirname(realpathSync(fileURLToPath(import.meta.url))))
@@ -69,7 +78,7 @@ const exec = (command: string, args: string[], cwd?: string) => new Promise<void
   execFile(command, args, { cwd, maxBuffer: 16 * 1024 * 1024 }, (error, _stdout, stderr) => error ? reject(new Error(`${command} ${args.join(" ")} failed: ${stderr.trim().split("\n").slice(-2).join(" ") || error.message}`)) : resolve()))
 
 /**
- * Installs the given release over the running copy. The bundle changes on disk,
+ * Installs the given release over the running copy, into the npm prefix it lives in. The bundle changes on disk,
  * which makes the running gittt restart itself with the same folder.
  * @param version the release to install, as returned by `availableUpdate`
  * @returns resolves when the new build is on disk; rejects with the failing command and its last error lines
@@ -82,5 +91,6 @@ export const installUpdate = async (version: string) => {
     await exec("node", ["build.mjs"], root)
     return
   }
-  await exec("npm", ["install", "--global", "--no-audit", "--no-fund", `github:${UPDATE_REPOSITORY}#${version}`])
+  const prefix = root.split(sep).at(-3) === "lib" ? dirname(dirname(dirname(root))) : null
+  await exec("npm", ["install", "--global", ...(prefix ? ["--prefix", prefix] : []), "--no-audit", "--no-fund", releaseTarball(version)])
 }
