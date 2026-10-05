@@ -4,9 +4,9 @@
  * commit header (or the stopped operation) and the selected file's diff, hunk
  * by hunk, with old and new line numbers and syntax colours.
  */
-import { Text } from "ink"
+import { Box, Text } from "ink"
 import { prefixWidth, type ParsedDiff } from "@/diff"
-import { FILE_STATUSES, fileRows, type FileRow, type FileView } from "@/files"
+import { FILE_STATUSES, fileRows, rowFiles, type FileRow, type FileView } from "@/files"
 import type { Badge } from "@/history"
 import type { Segment } from "@/highlight"
 import { splitMessage } from "@/message"
@@ -18,6 +18,7 @@ import { Clickable, type LocalMouseEvent } from "@/mouse/regions"
 import type { Theme } from "@/theme"
 import { fit, mix, slide, widthOf } from "./text"
 import { useTheme } from "./theme"
+import { CHECKBOX_WIDTH, CheckBox, type CheckState } from "./checkbox"
 import { windowStart } from "./window"
 
 /** One drawn line of the diff pane. */
@@ -30,6 +31,27 @@ interface DiffLine {
   line?: number
   /** Text a click on the line copies to the clipboard. */
   copy?: string
+}
+
+/**
+ * Builds the lines of a whole file shown in the diff pane.
+ * @param path file path, for the title
+ * @param text the file's text
+ * @param highlights its highlighted lines, or `null` while they are not ready
+ * @param theme colours and glyphs
+ * @returns a title line and one numbered line per line of the file
+ */
+export const fileViewLines = (path: string, text: string, highlights: Segment[][] | null, theme: Theme): DiffLine[] => {
+  const { colors: palette, glyphs } = theme
+  const source = text.endsWith("\n") ? text.slice(0, -1).split("\n") : text.split("\n")
+  return [
+    { segments: [{ text: ` ${glyphs.file} ${path}`, bold: true, color: palette.text }, { text: `  whole file, esc returns to the diff`, color: palette.textMuted }], background: palette.header, line: 1 },
+    ...source.map((code, index) => ({
+      gutter: true,
+      line: index + 1,
+      segments: [{ text: `${String(index + 1).padStart(6)} `, color: palette.textMuted }, { text: " " }, ...(highlights?.[index] ?? [{ text: code }])],
+    })),
+  ]
 }
 
 /**
@@ -106,6 +128,10 @@ export const diffLines = (details: CommitDetails | null, badges: Badge[], operat
 /** What the lower panes report to the screen. */
 export interface DetailsEvents {
   onFile: (index: number, gesture: "click" | "double", event: MouseEvent) => void
+  /** The checkbox of a working-tree file was clicked. */
+  onStage: (index: number) => void
+  /** The checkbox in the header was clicked: stage or unstage everything. */
+  onStageAll: () => void
   onFilesHeader: () => void
   onFilesWheel: (step: number, event: MouseEvent) => void
   onLine: (index: number, gesture: "click" | "double", event: MouseEvent) => void
@@ -144,12 +170,20 @@ export const FilesPane = ({ rows, cursor, width, height, focused, view, working,
   const start = windowStart(cursor, rows.length, listHeight, 1 / 2)
   const noun = working ? "Pending files" : "Files"
   const sort: Record<FileView, string> = { path: "sorted by path", status: "sorted by file status", tree: "tree view" }
-  const fileCount = rows.filter(row => row.kind === "file").length
+  const files = rows.flatMap(row => row.kind === "file" ? [row.file] : [])
+  const fileCount = files.length
+  const box = (file: { staged: boolean; unstaged: boolean }): CheckState => file.staged && !file.unstaged ? "on" : file.staged ? "mixed" : "off"
+  const groupBox = (group: { staged: boolean; unstaged: boolean }[]): CheckState => group.length && group.every(file => file.staged && !file.unstaged) ? "on" : group.some(file => file.staged) ? "mixed" : "off"
+  const allBox = groupBox(files)
+  const boxCells = working ? CHECKBOX_WIDTH + 2 : 0
   return (
     <Clickable flexDirection="column" width={width} height={height} onWheel={events.onFilesWheel}>
-      <Clickable height={1} onClick={events.onFilesHeader}>
-        <Text color={focused ? palette.accent : palette.textMuted} bold>{fit(` ${noun}, ${sort[view]} ${glyphs.dropdown} (${viewKey})`, width - 5)}{String(fileCount).padStart(5)}</Text>
-      </Clickable>
+      <Box height={1} overflow="hidden">
+        {working && fileCount ? <Clickable flexShrink={0} onClick={events.onStageAll}><Text> </Text><CheckBox state={allBox} /><Text> </Text></Clickable> : null}
+        <Clickable flexGrow={1} onClick={events.onFilesHeader}>
+          <Text color={focused ? palette.accent : palette.textMuted} bold>{fit(` ${noun}, ${sort[view]} ${glyphs.dropdown} (${viewKey})`, width - 5 - (working && fileCount ? boxCells : 0))}{String(fileCount).padStart(5)}</Text>
+        </Clickable>
+      </Box>
       {!rows.length ? <Text color={palette.textMuted}>{fit(working ? "   Nothing to commit" : "   No files changed", width)}</Text> : null}
       {rows.slice(start, start + listHeight).map((row, offset) => {
         const index = start + offset
@@ -158,8 +192,9 @@ export const FilesPane = ({ rows, cursor, width, height, focused, view, working,
         const indent = " ".repeat(row.depth * spacing.indent + 1)
         if (row.kind === "folder")
           return (
-            <Clickable key={`folder:${index}`} height={1} onClick={event => events.onFile(index, "click", event)}>
-              <Text backgroundColor={background} color={palette.textMuted}>{fit(slide(`${indent}${glyphs.folder} ${row.name}/`, scrollX), width)}</Text>
+            <Clickable key={`folder:${index}`} height={1} width={width} onClick={event => events.onFile(index, "click", event)}>
+              {working ? <Clickable flexShrink={0} onClick={() => events.onStage(index)}><Text backgroundColor={background}> </Text><CheckBox state={groupBox(rowFiles(rows, index))} /><Text backgroundColor={background}> </Text></Clickable> : null}
+              <Text backgroundColor={background} color={palette.textMuted} wrap="truncate-end">{fit(slide(`${indent}${glyphs.folder} ${row.name}/`, scrollX), width - boxCells)}</Text>
             </Clickable>
           )
         const status = FILE_STATUSES[row.file.status] ?? FILE_STATUSES.M
@@ -168,11 +203,12 @@ export const FilesPane = ({ rows, cursor, width, height, focused, view, working,
         const folderShown = Math.max(0, widthOf(row.folder) - scrollX)
         return (
           <Clickable key={row.file.path} height={1} width={width} onClick={event => events.onFile(index, "click", event)} onDoubleClick={event => events.onFile(index, "double", event)}>
+            {working ? <Clickable flexShrink={0} onClick={() => events.onStage(index)}><Text backgroundColor={background}> </Text><CheckBox state={box(row.file)} /><Text backgroundColor={background}> </Text></Clickable> : null}
             <Text backgroundColor={background} wrap="truncate-end">
               <Text>{indent}</Text>
               <Text color={tone} bold>{glyphs.status[status.tone]} </Text>
               <Text color={palette.textMuted}>{[...name].slice(0, folderShown).join("")}</Text>
-              <Text color={palette.text}>{fit([...name].slice(folderShown).join(""), Math.max(1, width - indent.length - 2 - folderShown))}</Text>
+              <Text color={palette.text}>{fit([...name].slice(folderShown).join(""), Math.max(1, width - indent.length - 2 - folderShown - boxCells))}</Text>
             </Text>
           </Clickable>
         )

@@ -63,3 +63,21 @@ export const fileRows = (files: ChangedFile[], view: FileView): FileRow[] => {
   }
   return rows
 }
+
+/**
+ * The files a row stands for: the file itself, or every file nested under a folder row.
+ * @param rows the rows as `fileRows` builds them
+ * @param index the row asked about
+ * @returns the changed files under that row, empty for an index outside the list
+ */
+export const rowFiles = (rows: FileRow[], index: number): ChangedFile[] => {
+  const row = rows[index]
+  if (!row) return []
+  if (row.kind === "file") return [row.file]
+  const files: ChangedFile[] = []
+  for (let next = index + 1; next < rows.length && rows[next].depth > row.depth; next++) {
+    const nested = rows[next]
+    if (nested.kind === "file") files.push(nested.file)
+  }
+  return files
+}

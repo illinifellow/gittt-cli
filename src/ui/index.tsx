@@ -5,37 +5,45 @@
  * dialog; the context menu ("." or a right click) lists the actions for the
  * row; every element answers the mouse.
  */
-import { execFile, spawn } from "node:child_process"
-import { existsSync } from "node:fs"
-import { join } from "node:path"
+import { spawn } from "node:child_process"
 import { Box, Text, useApp, useInput, useWindowSize } from "ink"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { loadConfig, saveConfig, type Config } from "@/config"
 import { buildDialog, dialogCommands, validateDialog, type DialogKind, type DialogTarget } from "@/dialogs"
 import { parseDiff, type ParsedDiff } from "@/diff"
-import type { FileView } from "@/files"
-import { readDetails, readDiff, readLog, runGit } from "@/git"
+import { rowFiles, type FileView } from "@/files"
+import { readDetails, readDiff, readLog, readWholeFile, runGit } from "@/git"
 import { DiffHighlighter, type Segment } from "@/highlight"
 import { buildLog, collectBadges, commitNamer, describeOperation } from "@/history"
-import { WORKING_TREE, type Commit, type CommitDetails, type Repository } from "@/protocol"
+import { WORKING_TREE, type ChangedFile, type Commit, type CommitDetails, type Repository } from "@/protocol"
 import type { RepositoryStore } from "@/store"
-import { readEditorTheme } from "@/syntax"
-import { DiffPane, FilesPane, diffLines, filesOf, gutterWidth, lineText, selectedText, type DetailsEvents, type DiffSelection } from "./details"
+import { readSyntaxTheme } from "@/syntax"
+import { DiffPane, FilesPane, diffLines, fileViewLines, filesOf, gutterWidth, lineText, selectedText, type DetailsEvents, type DiffSelection } from "./details"
 import type { MouseEvent } from "@/mouse"
 import { Clickable } from "@/mouse/regions"
 import { DialogBox, dialogActivate, dialogKey, openDialogState, type DialogState } from "./dialog"
-import { LogPane, descriptionWidth, graphWidth, visibleRange, type LogColumn, type LogEvents } from "./log"
+import { LogPane, graphWidth, visibleRange, type LogColumn, type LogEvents } from "./log"
 import { MenuBox, type MenuItem, type MenuState } from "./menu"
 import { terminalBackground } from "@/terminal"
 import { resolveTheme } from "@/theme"
+import { availableUpdate, installUpdate } from "@/update"
 import { fit } from "./text"
 import { ThemeProvider } from "./theme"
 import { TreePane, flattenTree, sectionKey, type TreeEvents, type TreeNode } from "./tree"
 
+/** How often a running gittt asks GitHub for a newer release: every six hours. */
+const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000
+
 type Pane = "tree" | "log" | "files" | "diff"
 
 const PANES: Pane[] = ["tree", "log", "files", "diff"]
-const highlighter = new DiffHighlighter(readEditorTheme(), loadConfig().limits)
+const highlighters = new Map<string, DiffHighlighter>()
+
+/** @returns the highlighter for a syntax theme, created once per name */
+const highlighterFor = (syntax: string) => {
+  if (!highlighters.has(syntax)) highlighters.set(syntax, new DiffHighlighter(readSyntaxTheme(syntax), loadConfig().limits))
+  return highlighters.get(syntax) as DiffHighlighter
+}
 
 const toClipboard = (text: string) => {
   const child = spawn(process.platform === "darwin" ? "pbcopy" : "xclip", process.platform === "darwin" ? [] : ["-selection", "clipboard"])
@@ -46,6 +54,9 @@ const toClipboard = (text: string) => {
  * The main screen.
  * @param props.store the catalogue of the chosen folder
  */
+/** The column each log divider right of the graph resizes. */
+const COLUMN_AFTER = { description: "hash", hash: "author", author: "date" } as const
+
 export const App = ({ store }: { store: RepositoryStore }) => {
   const { exit } = useApp()
   const { columns: screenWidth, rows: screenHeight } = useWindowSize()
@@ -70,12 +81,28 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   const [diffCursor, setDiffCursor] = useState(0)
   const lastDiffText = useRef({ key: "" })
   const [selection, setSelection] = useState<DiffSelection | null>(null)
+  const [viewing, setViewing] = useState<{ file: ChangedFile; text: string; highlights: Segment[][] | null } | null>(null)
   const [focus, setFocus] = useState<Pane>("log")
   const [dialog, setDialog] = useState<DialogState | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [prompt, setPrompt] = useState<{ label: string; value: string; onSubmit: (value: string) => void } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null)
+  const [update, setUpdate] = useState<string | null>(null)
+
+  useEffect(() => {
+    const check = () => void availableUpdate().then(version => setUpdate(version))
+    check()
+    const timer = setInterval(check, UPDATE_CHECK_MS)
+    return () => clearInterval(timer)
+  }, [])
+
+  /** Installs the newer release; the bundle changing on disk restarts gittt with the same folder. */
+  const applyUpdate = useCallback(() => {
+    if (!update || busy) return
+    setBusy(`updating to ${update}`)
+    void installUpdate(update).then(() => setStatus({ text: `updated to ${update}, restarting`, error: false }), (error: Error) => setStatus({ text: error.message, error: true })).finally(() => setBusy(null))
+  }, [update, busy])
   useEffect(() => {
     if (!status) return
     const timer = setTimeout(() => setStatus(null), status.error ? config.limits.errorStatusMs : config.limits.statusMs)
@@ -140,7 +167,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     return () => {
       current = false
     }
-  }, [repository?.path, entryHash, changes])
+  }, [repository?.path, entryHash, changes, repository?.staged, repository?.conflicts])
 
   const fileView = settings.fileView as FileView
   const fileRowsList = useMemo(() => filesOf(details, fileView), [details, fileView])
@@ -158,17 +185,17 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     void (async () => {
       const text = await readDiff(repository.path, details.hash, selectedFile, config.limits.diffKilobytes)
       if (!current) return
-      if (lastDiffText.current.key === `${selectedFile.path}\0${text}`) return
-      lastDiffText.current = { key: `${selectedFile.path}\0${text}` }
+      if (lastDiffText.current.key === `${theme.syntax}\0${selectedFile.path}\0${text}`) return
+      lastDiffText.current = { key: `${theme.syntax}\0${selectedFile.path}\0${text}` }
       const parsed = parseDiff(text)
       setDiff({ file: selectedFile.path, parsed, highlights: null })
-      const highlights = await highlighter.highlight(selectedFile.path, text, parsed, partial => current && setDiff({ file: selectedFile.path, parsed, highlights: partial }))
+      const highlights = await highlighterFor(theme.syntax).highlight(selectedFile.path, text, parsed, partial => current && setDiff({ file: selectedFile.path, parsed, highlights: partial }))
       if (current && highlights) setDiff({ file: selectedFile.path, parsed, highlights })
     })().catch(() => current && setDiff(null))
     return () => {
       current = false
     }
-  }, [repository?.path, details, selectedFile?.path])
+  }, [repository?.path, details, selectedFile?.path, theme.syntax])
 
   const treeNodes = useMemo(() => flattenTree(repositories, expanded, filter, palette, glyphs), [repositories, expanded, filter, palette, glyphs])
   const node: TreeNode | undefined = treeNodes[Math.min(treeCursor, treeNodes.length - 1)]
@@ -178,14 +205,14 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   }, [query, log.entries])
   const badges = repository && details ? collectBadges(repository).get(details.hash) ?? [] : []
   const operation = repository && details?.hash === WORKING_TREE ? describeOperation(repository, commitNamer(repository)) : ""
-  const lines = useMemo(() => diffLines(details, badges, operation, diff, settings.gitmoji, theme), [details, diff, operation, settings.gitmoji, palette, badges.length])
+  const lines = useMemo(() => viewing ? fileViewLines(viewing.file.path, viewing.text, viewing.highlights, theme) : diffLines(details, badges, operation, diff, settings.gitmoji, theme), [viewing, details, diff, operation, settings.gitmoji, palette, badges.length])
 
-  const run = useCallback(async (path: string, label: string, commands: string[][]) => {
+  const run = useCallback(async (path: string, label: string, commands: string[][], quiet = false) => {
     setBusy(label)
     setStatus(null)
     try {
       for (const command of commands) await runGit(path, command)
-      setStatus({ text: `${label}: done`, error: false })
+      if (!quiet) setStatus({ text: `${label}: done`, error: false })
     } catch (error) {
       setStatus({ text: error instanceof Error ? error.message.split("\n").slice(-3).join(" ") : String(error), error: true })
     } finally {
@@ -205,7 +232,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     const owner = repositories.find(candidate => candidate.path === state.path)
     if (!owner) return setDialog(null)
     const spec = buildDialog(state.spec.kind, owner, state.target)
-    const problem = validateDialog(spec, state.values)
+    const problem = validateDialog(spec, state.values, owner)
     if (problem) return setDialog({ ...state, error: problem })
     setDialog(null)
     void run(state.path, spec.title.toLowerCase(), dialogCommands(spec, state.values, owner, state.target))
@@ -217,18 +244,44 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     openDialog(target.section === "remote" ? "checkoutRemote" : "checkout", target, path)
   }, [openDialog, run, selectedPath])
 
-  const openInEditor = useCallback((line?: number, chosen = selectedFile) => {
-    if (!repository || !chosen) return
-    const file = join(repository.path, chosen.path)
-    if (!existsSync(file)) return setStatus({ text: `${chosen.path} is not in the working tree`, error: true })
-    execFile("code", ["-g", line ? `${file}:${line}` : file], error => error && setStatus({ text: `code -g failed: ${error.message}`, error: true }))
-    setStatus({ text: `opened ${chosen.path}${line ? `:${line}` : ""} in VS Code`, error: false })
-  }, [repository, selectedFile])
+  /** Opens a whole file in the diff pane, at a line if given, highlighted in the theme's syntax colours. */
+  const openFile = useCallback(async (file: ChangedFile | null | undefined, line?: number) => {
+    if (!repository || !details || !file) return
+    const text = await readWholeFile(repository.path, details.hash, file, config.limits.diffKilobytes).catch((error: Error) => {
+      setStatus({ text: error.message.split("\n").slice(-2).join(" "), error: true })
+      return null
+    })
+    if (text === null) return
+    const view = { file, text, highlights: null as Segment[][] | null }
+    setViewing(view)
+    setSelection(null)
+    setFocus("diff")
+    setDiffCursor(line ?? 1)
+    const source = text.endsWith("\n") ? text.slice(0, -1).split("\n") : text.split("\n")
+    const parsed = { header: [], hunks: [{ header: "", oldStart: 1, newStart: 1, newCount: source.length, lines: source.map(code => ` ${code}`) }], binary: false, combined: false }
+    const highlighted = await highlighterFor(theme.syntax).highlight(file.path, `whole\0${text}`, parsed, partial => setViewing(current => current?.file === file ? { ...view, highlights: partial[0] } : current)).catch(() => null)
+    if (highlighted) setViewing(current => current?.file === file ? { ...view, highlights: highlighted[0] } : current)
+  }, [repository, details, config.limits.diffKilobytes, theme.syntax])
+
+  /** Stages a working-tree file, or unstages it when all its changes are staged. */
+  const toggleStage = useCallback((group: ChangedFile[]) => {
+    if (!repository || !group.length) return
+    const paths = group.flatMap(file => file.previousPath ? [file.previousPath, file.path] : [file.path])
+    const unstage = group.every(file => file.staged && !file.unstaged)
+    void run(repository.path, unstage ? "unstage" : "stage", [unstage ? (repository.head.hash ? ["restore", "--staged", "--", ...paths] : ["rm", "--cached", "-r", "-q", "--", ...paths]) : ["add", "-A", "--", ...paths]], true)
+  }, [repository, run])
+
+  /** Stages every working-tree change, or unstages everything when all of it is staged. */
+  const toggleStageAll = useCallback(() => {
+    if (!repository || !details) return
+    const unstage = details.files.length > 0 && details.files.every(file => file.staged && !file.unstaged)
+    void run(repository.path, unstage ? "unstage all" : "stage all", [unstage ? (repository.head.hash ? ["restore", "--staged", "--", "."] : ["rm", "--cached", "-r", "-q", "--", "."]) : ["add", "-A"]], true)
+  }, [repository, details, run])
 
   const commitMenu = (entry = log.entries[logCursor]): MenuItem[] => {
     if (!entry || !repository) return []
     const target: DialogTarget = { hash: entry.hash, section: "commit", subject: entry.subject }
-    if (entry.hash === WORKING_TREE) return [{ label: "Stash Changes…", run: () => openDialog("stash") }]
+    if (entry.hash === WORKING_TREE) return [{ label: "Commit…", run: () => openDialog("commit") }, { label: "Stage All", run: toggleStageAll }, { label: "Stash Changes…", run: () => openDialog("stash") }]
     return [
       { label: "Checkout…", run: () => checkout(target) },
       { label: "Merge…", run: () => openDialog("merge", target), separator: true },
@@ -416,7 +469,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     if (input === keys.merge) return openDialog("merge")
     if (input === keys.stash) return openDialog("stash")
     if (input === keys.tag) return openDialog("tag", focus === "log" && entry && entry.hash !== WORKING_TREE ? { hash: entry.hash, subject: entry.subject } : {})
-    if (input === keys.commit) return setStatus({ text: "Commit: stage and commit in VS Code Source Control or with git commit", error: false })
+    if (input === keys.commit) return openDialog("commit")
     if (input === keys.rescan) return treeEvents.onAction("rescan")
     if (input === keys.moveUp || input === keys.moveDown) return moveRepository(input === keys.moveUp ? -1 : 1)
     if (input === keys.add) return askAddRepository()
@@ -431,7 +484,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     if (input === keys.authorNarrower || input === keys.authorWider) return resizeColumn("author", input === keys.authorWider ? 2 : -2)
     if (input === keys.dateNarrower || input === keys.dateWider) return resizeColumn("date", input === keys.dateWider ? 2 : -2)
     if (input === keys.sidebarNarrower || input === keys.sidebarWider) return resizeColumn("tree", input === keys.sidebarWider ? 2 : -2)
-    if (input === keys.menu || input === " " && focus !== "tree") {
+    if (input === keys.menu || input === " " && (focus === "log" || focus === "diff")) {
       const items = focus === "tree" ? treeMenu() : focus === "log" ? commitMenu() : []
       if (items.length) setMenu({ title: focus === "tree" ? node?.label ?? "" : entry?.subject ?? "", items, cursor: 0 })
       return
@@ -467,11 +520,13 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     }
     if (focus === "files") {
       if (step) return setFileCursor(Math.max(0, Math.min(fileRowsList.length - 1, fileCursor + step)))
-      if (key.return) return openInEditor()
+      if (key.return) return void openFile(selectedFile)
+      if (input === " " && fileRow && details?.hash === WORKING_TREE) return toggleStage(rowFiles(fileRowsList, fileCursor))
     }
     if (focus === "diff") {
       if (step) return setDiffCursor(Math.max(0, Math.min(lines.length - 1, diffCursor + step)))
-      if (key.return) return openInEditor(lines[diffCursor]?.line)
+      if (key.escape && viewing) return setViewing(null)
+      if (key.return && !viewing) return void openFile(selectedFile, lines[diffCursor]?.line)
     }
   })
 
@@ -511,9 +566,8 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   const clampDiff = (value: number) => Math.max(0, Math.min(lines.length - 1, value))
   const shownRows = visibleRange(logCursor, log.entries.length, logHeight)
   const graph = graphWidth(log.rows.slice(shownRows.start, shownRows.end), config.columns, settings.compact)
-  const description = descriptionWidth(mainWidth, graph, config.columns)
 
-  const commitAction = () => setStatus({ text: "Commit: stage and commit in VS Code Source Control or with git commit", error: false })
+  const commitAction = () => openDialog("commit")
   const TOOLS: { label: string; key: string; count?: number; run: () => void }[] = [
     { label: "Commit", key: config.keys.commit, count: changes, run: commitAction },
     { label: "Pull", key: config.keys.pull, count: current?.behind, run: () => openDialog("pull") },
@@ -539,12 +593,13 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   const detailsDivider = divider(event => updateConfig(draft => { draft.columns.details = Math.max(3, Math.min(bodyHeight - 6, height - 2 - event.y)) }))
   const filesDivider = divider(event => updateConfig(draft => { draft.columns.files = Math.max(12, Math.min(mainWidth - 20, event.x - treeWidth)) }))
   const columnDivider = (column: LogColumn, start: MouseEvent) => {
-    const initial = { graph, description, hash: config.columns.hash, author: config.columns.author }
+    const initial = { graph, hash: config.columns.hash, author: config.columns.author, date: config.columns.date }
     return (event: MouseEvent) => updateConfig(draft => {
       const delta = event.x - start.x
-      if (column === "graph") draft.columns.graph = Math.max(3, Math.min(80, initial.graph + delta))
-      else if (column === "description") draft.columns.hash = Math.max(4, Math.min(60, initial.hash - delta))
-      else draft.columns[column] = Math.max(4, Math.min(80, initial[column] + delta))
+      if (column === "graph") return void (draft.columns.graph = Math.max(3, Math.min(80, initial.graph + delta)))
+      // Right of the description the columns hang from the pane's right edge: each divider sizes the column after it.
+      const after = COLUMN_AFTER[column]
+      draft.columns[after] = Math.max(4, Math.min(80, initial[after] - delta))
     })
   }
 
@@ -623,8 +678,11 @@ export const App = ({ store }: { store: RepositoryStore }) => {
       setFocus("files")
       setFileCursor(index)
       const row = fileRowsList[index]
-      if (gesture === "double" && row?.kind === "file") openInEditor(undefined, row.file)
+      setViewing(null)
+      if (gesture === "double" && row?.kind === "file") void openFile(row.file)
     },
+    onStage: index => toggleStage(rowFiles(fileRowsList, index)),
+    onStageAll: toggleStageAll,
     onSelect: start => {
       const point = (event: { localX: number; localY: number }) => {
         const line = Math.max(0, Math.min(lines.length - 1, diffScroll + event.localY))
@@ -648,7 +706,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
       setFocus("diff")
       setDiffCursor(index)
       if (lines[index]?.copy) return copy(lines[index].copy as string)
-      if (gesture === "double") openInEditor(lines[index]?.line)
+      if (gesture === "double" && !viewing) void openFile(selectedFile, lines[index]?.line)
     },
   }
 
@@ -671,7 +729,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
       onClose={() => setMenu(null)} />
   ) : prompt ? (
     <Box width={width} height={bodyHeight} justifyContent="center" alignItems="flex-start" paddingTop={2}>
-      <Box flexDirection="column" width={Math.min(theme.spacing.dialogWidth + 6, width - 4)} borderStyle="round" borderColor={palette.accent} paddingX={1}>
+      <Box flexDirection="column" width={Math.min(theme.spacing.dialogWidth + 6, width - 4)} borderStyle="round" borderColor={palette.accent} borderBackgroundColor={palette.background} backgroundColor={palette.background} paddingX={1}>
         <Text bold color={palette.text}>{prompt.label}</Text>
         <Text backgroundColor={palette.field} color={palette.text}>{fit(`${prompt.value}${glyphs.cursor}`, Math.min(theme.spacing.dialogWidth + 2, width - 8))}</Text>
         <Box justifyContent="flex-end" gap={2}>
@@ -687,7 +745,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
 
   return (
     <ThemeProvider value={theme}>
-    <Box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height} backgroundColor={theme.surface}>
       <Box height={1} width={width} overflow="hidden">
         <Text color={palette.accent} bold>{" gittt   "}</Text>
         {TOOLS.map(tool => (
@@ -702,6 +760,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
         ))}
         <Box flexGrow={1} />
         <Text color={status?.error ? palette.stash : palette.textMuted} wrap="truncate-start">{busy ? `⟳ ${busy}… ` : status ? `${status.text} ` : scanning ? "searching repositories… " : ""}</Text>
+        {update ? <Clickable flexShrink={0} onClick={applyUpdate}><Text backgroundColor={palette.accent} color={palette.accentText} bold>{" Update "}</Text><Text> </Text></Clickable> : null}
       </Box>
       <Text color={palette.border}>{glyphs.rule.repeat(width)}</Text>
       {overlay ?? (

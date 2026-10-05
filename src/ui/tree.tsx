@@ -11,7 +11,7 @@ import { Clickable } from "@/mouse/regions"
 import type { Repository } from "@/protocol"
 import type { KeyBindings } from "@/config"
 import type { GlyphTokens } from "@/theme"
-import { fit, mix, slide, widthOf, type Palette } from "./text"
+import { fit, slide, widthOf, type Palette } from "./text"
 import { useTheme } from "./theme"
 import { windowStart } from "./window"
 
@@ -182,14 +182,17 @@ export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, 
           const index = start + offset
           const atCursor = index === cursor
           const selectedRepository = node.kind === "repository" && node.path === selectedPath
-          const background = atCursor ? (focused ? palette.selection : palette.selectionInactive) : selectedRepository ? palette.repositoryRow : undefined
+          const background = atCursor ? (focused ? palette.selection : palette.selectionInactive) : undefined
           const indent = " ".repeat(node.depth * spacing.indent)
           const twisty = node.toggle ? `${node.open ? glyphs.open : glyphs.closed} ` : "  "
           const glyph = glyphOf(node, glyphs)
           const bullet = node.kind === "branch" ? (node.current ? `${glyphs.currentBranch} ` : "  ") : ""
-          const metaWidth = (node.meta ?? []).reduce((total, part) => total + 1 + widthOf(part.pill ? ` ${part.text} ` : part.text), 0)
-          const fixed = indent.length + 2 + widthOf(bullet) + (glyph ? widthOf(glyph) + 1 : 0) + metaWidth + 1
-          const labelWidth = Math.max(1, width - fixed)
+          const meta = node.meta ?? []
+          const available = width - (indent.length + 2 + widthOf(bullet) + (glyph ? widthOf(glyph) + 1 : 0) + 1)
+          const pillsWidth = meta.reduce((total, part) => total + 1 + (part.pill ? widthOf(` ${part.text} `) : 1), 0)
+          const textWidth = meta.reduce((total, part) => total + (part.pill ? 0 : widthOf(part.text)), 0)
+          const textRoom = Math.max(0, Math.min(textWidth, available - pillsWidth - Math.min(widthOf(node.label), Math.ceil(available / 2))))
+          const labelWidth = Math.max(1, available - pillsWidth - textRoom)
           return (
             <Clickable key={node.key} height={1} width={width} onPress={node.kind === "repository" ? () => event => {
               if (event.kind === "up" && event.localY !== 0) events.onMove(index, event.localY)
@@ -201,11 +204,11 @@ export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, 
               <Text backgroundColor={background} wrap="truncate-end">
                 {bullet ? <Text color={palette.accent}>{bullet}</Text> : null}
                 {glyph ? <Text color={node.kind === "repository" ? palette.accent : palette.textMuted}>{glyph} </Text> : null}
-                <Text color={node.kind === "section" ? palette.textMuted : node.kind === "error" ? palette.stash : palette.text} bold={node.kind === "repository" || node.current}>{fit(slide(node.label, scrollX), labelWidth)}</Text>
-                {(node.meta ?? []).map((part, partIndex) => (
+                <Text color={node.kind === "section" ? palette.textMuted : node.kind === "error" ? palette.stash : selectedRepository && !atCursor ? palette.accent : palette.text} bold={node.kind === "repository" || node.current}>{fit(slide(node.label, scrollX), labelWidth)}</Text>
+                {meta.map((part, partIndex) => (
                   <Text key={partIndex}>
                     <Text> </Text>
-                    {part.pill ? <Text backgroundColor={mix(part.color, palette.background, palette.labelGround)} color={part.color} bold>{` ${part.text} `}</Text> : <Text color={part.color}>{part.text}</Text>}
+                    {part.pill ? <Text backgroundColor={part.color} color={palette.pillText} bold>{` ${part.text} `}</Text> : <Text color={part.color}>{fit(part.text, Math.floor(textRoom * widthOf(part.text) / Math.max(1, textWidth)))}</Text>}
                   </Text>
                 ))}
                 <Text> </Text>

@@ -70,8 +70,17 @@ const customizationRules = (customizations: Record<string, unknown> | undefined)
   return [...rules, ...((customizations.textMateRules as TokenRule[] | undefined) ?? [])]
 }
 
+/**
+ * @param name `vscode` for the editor's theme, or the name of a bundled shiki theme
+ * @returns the theme diffs are highlighted with; an unknown name falls back to Dark+
+ */
+export const readSyntaxTheme = async (name: string): Promise<ThemeRegistrationAny> => {
+  if (name !== "vscode") return ((await (bundledThemes[name as keyof typeof bundledThemes] ?? bundledThemes["dark-plus"])()).default) as ThemeRegistrationAny
+  return readEditorTheme()
+}
+
 /** @returns the VS Code theme in use with the user's token colour customizations, or Dark+ when VS Code is absent */
-export const readEditorTheme = async (): Promise<ThemeRegistrationAny> => {
+const readEditorTheme = async (): Promise<ThemeRegistrationAny> => {
   const settings = await readJson<Record<string, unknown>>(userSettingsPath()).catch(() => ({} as Record<string, unknown>))
   const name = String(settings["workbench.colorTheme"] ?? "")
   const path = name ? await findThemePath(name) : null

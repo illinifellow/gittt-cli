@@ -1,13 +1,14 @@
 /**
  * Themes: every colour, glyph and spacing value gittt draws with, as named
- * tokens. The themes themselves live in `config/default.json` (dark and light
- * ship; `auto` picks one by the terminal's background) and can be changed or
- * added in the user config; its `tokens` section overrides single values on top
+ * tokens. The themes themselves live in `config/settings.json` (golden-brown and
+ * milk-and-honey ship; `auto` picks one by the terminal's background) and can be
+ * changed or added in the user settings; its `tokens` section overrides single values on top
  * of the active theme. Components read the resolved theme and hold no literals.
  */
 
 /** Colours, as `#rrggbb`. */
 export interface ColorTokens {
+  /** The screen's ground; `transparent` leaves the terminal's own background showing. */
   background: string
   text: string
   textMuted: string
@@ -16,7 +17,6 @@ export interface ColorTokens {
   accentText: string
   selection: string
   selectionInactive: string
-  repositoryRow: string
   header: string
   field: string
   branch: string
@@ -34,6 +34,8 @@ export interface ColorTokens {
   addedBackground: string
   deletedBackground: string
   labelGround: number
+  /** Digits on count pills, drawn on the pill's solid colour. */
+  pillText: string
   lanes: string[]
 }
 
@@ -65,6 +67,8 @@ export interface GlyphTokens {
   dropdown: string
   checked: string
   unchecked: string
+  /** A checkbox that is partly on: a file with some changes staged and some not. */
+  mixed: string
   radioOn: string
   radioOff: string
   pointer: string
@@ -95,6 +99,10 @@ export interface Theme {
   colors: ColorTokens
   glyphs: GlyphTokens
   spacing: SpacingTokens
+  /** Code highlighting in diffs: `vscode` follows the editor's theme, any other value names a bundled shiki theme. */
+  syntax: string
+  /** What the screen paints behind everything: the theme's background, or `undefined` for a transparent one. */
+  surface: string | undefined
 }
 
 /** Partial overrides of a theme, as stored in the config. */
@@ -102,7 +110,20 @@ export interface ThemeOverrides {
   colors?: Partial<ColorTokens>
   glyphs?: Partial<GlyphTokens>
   spacing?: Partial<SpacingTokens>
+  syntax?: string
 }
+
+/** The theme used on dark terminals and when a named theme does not exist. */
+export const DEFAULT_THEME = "golden-brown"
+
+/** The `background` value that leaves the terminal's own background showing. */
+export const TRANSPARENT = "transparent"
+
+/** The ground tints are mixed with under a transparent theme when the terminal does not say its background. */
+const FALLBACK_GROUND = "#000000"
+
+/** The theme `auto` picks on light terminals. */
+export const LIGHT_THEME = "milk-and-honey"
 
 /** Luminance of a `#rrggbb` colour, 0 (black) to 1 (white). */
 const luminance = (color: string) => {
@@ -113,24 +134,27 @@ const luminance = (color: string) => {
 /**
  * Picks the theme name for `auto`.
  * @param background the terminal background, if it answered
- * @returns `light` on a light background, `dark` otherwise
+ * @returns the light theme on a light background, the default theme otherwise
  */
-export const autoTheme = (background: string | undefined) => background && luminance(background) > 0.5 ? "light" : "dark"
+export const autoTheme = (background: string | undefined) => background && luminance(background) > 0.5 ? LIGHT_THEME : DEFAULT_THEME
 
 /**
  * Builds the active theme from the configuration.
  * @param config themes, icon sets, overrides and settings (`theme`, `icons`)
- * @param background the terminal background; in `auto` it chooses the theme, and it always becomes `colors.background`
- * @returns the theme components draw with; a theme name missing from `themes` falls back to `dark`
+ * @param background the terminal background; `auto` chooses the theme by it, and a transparent theme mixes its tints with it
+ * @returns the theme components draw with; a theme name missing from `themes` falls back to the default theme. Under a transparent background `colors.background` is the terminal's (black when unknown), which opaque overlays such as dialogs paint, and `surface` is `undefined`
  */
 export const resolveTheme = (config: Pick<Config, "themes" | "iconSets" | "tokens"> & { settings: { theme: string; icons: string } }, background: string | undefined): Theme => {
   const name = config.settings.theme === "auto" ? autoTheme(background) : config.settings.theme
-  const theme = (config.themes[name] ?? config.themes.dark) as Theme
+  const theme = (config.themes[name] ?? config.themes[DEFAULT_THEME]) as Theme
   const overrides = config.tokens
   const colors = { ...theme.colors, ...overrides.colors }
+  const transparent = colors.background === TRANSPARENT
   return {
-    colors: background ? { ...colors, background } : colors,
+    colors: transparent ? { ...colors, background: background ?? FALLBACK_GROUND } : colors,
     glyphs: { ...theme.glyphs, ...config.iconSets[config.settings.icons], ...overrides.glyphs },
     spacing: { ...theme.spacing, ...overrides.spacing },
+    syntax: overrides.syntax ?? theme.syntax,
+    surface: transparent ? undefined : colors.background,
   }
 }

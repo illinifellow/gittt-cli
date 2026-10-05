@@ -1,12 +1,21 @@
 /**
- * Bundles the CLI into `dist/cli.js` (ESM, node) with esbuild; dependencies
- * stay external and come from node_modules. `--watch` rebuilds on change.
+ * Bundles the app into `dist/app.js` (ESM, node) with esbuild; dependencies
+ * stay external and come from node_modules. `dist/cli.js` is a two-line
+ * launcher that sets NODE_ENV to production before React loads, so React and
+ * ink run their production builds instead of the several times slower
+ * development ones. `--watch` rebuilds on change.
  */
-import { chmodSync } from "node:fs"
+import { chmodSync, writeFileSync } from "node:fs"
 import * as esbuild from "esbuild"
 
+/** The executable: production React unless the caller chose otherwise, then the app. */
+const LAUNCHER = `#!/usr/bin/env node
+process.env.NODE_ENV ??= "production"
+await import("./app.js")
+`
+
 const context = await esbuild.context({
-  entryPoints: { cli: "src/cli.tsx" },
+  entryPoints: { app: "src/cli.tsx" },
   outdir: "dist",
   bundle: true,
   platform: "node",
@@ -15,9 +24,11 @@ const context = await esbuild.context({
   jsx: "automatic",
   packages: "external",
   tsconfig: "tsconfig.json",
-  banner: { js: "#!/usr/bin/env node" },
   logLevel: "info",
-  plugins: [{ name: "executable", setup: build => build.onEnd(() => chmodSync("dist/cli.js", 0o755)) }],
+  plugins: [{ name: "launcher", setup: build => build.onEnd(() => {
+    writeFileSync("dist/cli.js", LAUNCHER)
+    chmodSync("dist/cli.js", 0o755)
+  }) }],
 })
 
 if (process.argv.includes("--watch")) await context.watch()

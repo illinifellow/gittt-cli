@@ -98,9 +98,9 @@
     "sidebarWider": ">"
   },
   "themes": {
-    "dark": {
+    "golden-brown": {
       "colors": {
-        "background": "#1e1e1e",
+        "background": "transparent",
         "text": "#e4e4e4",
         "textMuted": "#8f8f8f",
         "border": "#3a3a3a",
@@ -108,7 +108,6 @@
         "accentText": "#1c1c1c",
         "selection": "#6b4031",
         "selectionInactive": "#3a3a3a",
-        "repositoryRow": "#3b2c25",
         "header": "#2b2b2b",
         "field": "#363636",
         "branch": "#ff905c",
@@ -136,7 +135,8 @@
           "#f7a072",
           "#e5a3d6",
           "#d4c48a"
-        ]
+        ],
+        "pillText": "#1c1c1c"
       },
       "glyphs": {
         "repository": "▣",
@@ -161,8 +161,8 @@
         "closed": "▸",
         "currentBranch": "●",
         "dropdown": "▾",
-        "checked": "☑",
-        "unchecked": "☐",
+        "checked": "✓",
+        "unchecked": " ",
         "radioOn": "◉",
         "radioOff": "○",
         "pointer": "›",
@@ -198,7 +198,8 @@
           "cross": "┼",
           "endUp": "╵",
           "endDown": "╷"
-        }
+        },
+        "mixed": "−"
       },
       "spacing": {
         "indent": 2,
@@ -208,46 +209,47 @@
         "menuWidth": 48,
         "checklistRows": 8,
         "searchWidth": 24
-      }
+      },
+      "syntax": "vscode"
     },
-    "light": {
+    "milk-and-honey": {
       "colors": {
-        "background": "#ffffff",
-        "text": "#24292f",
-        "textMuted": "#6e7781",
-        "border": "#d0d7de",
-        "accent": "#d9622b",
+        "background": "#f2eee5",
+        "text": "#2b2823",
+        "textMuted": "#6b6559",
+        "border": "#d9d5ca",
+        "accent": "#b1651a",
         "accentText": "#ffffff",
-        "selection": "#f9d9c8",
-        "selectionInactive": "#eaeef2",
-        "repositoryRow": "#fbebe2",
-        "header": "#f3f4f6",
-        "field": "#eceff2",
-        "branch": "#d9622b",
-        "currentBranch": "#1a7f37",
-        "remote": "#8250df",
-        "tag": "#9a6700",
-        "head": "#1a7f37",
-        "stash": "#cf222e",
-        "added": "#1a7f37",
-        "deleted": "#cf222e",
-        "modified": "#9a6700",
-        "renamed": "#8250df",
-        "untracked": "#8250df",
-        "conflicted": "#cf222e",
-        "addedBackground": "#dafbe1",
-        "deletedBackground": "#ffebe9",
-        "labelGround": 0.18,
+        "selection": "#e4d0b8",
+        "selectionInactive": "#e3dfd4",
+        "header": "#e8e4d9",
+        "field": "#e3dfd4",
+        "branch": "#b1651a",
+        "currentBranch": "#2f7a4d",
+        "remote": "#9544a9",
+        "tag": "#8a6d1d",
+        "head": "#2f7a4d",
+        "stash": "#c14840",
+        "added": "#2f7a4d",
+        "deleted": "#c14840",
+        "modified": "#a3520b",
+        "renamed": "#9544a9",
+        "untracked": "#3d7f97",
+        "conflicted": "#c14840",
+        "addedBackground": "#d7e1cf",
+        "deletedBackground": "#ecd6cd",
+        "labelGround": 0.2,
+        "pillText": "#ffffff",
         "lanes": [
-          "#d9622b",
-          "#1a7f37",
-          "#8250df",
-          "#9a6700",
-          "#cf222e",
-          "#1b7c83",
-          "#bc4c00",
-          "#bf3989",
-          "#6e5a00"
+          "#b1651a",
+          "#2f7a4d",
+          "#9544a9",
+          "#8a6d1d",
+          "#c14840",
+          "#3d7f97",
+          "#a3520b",
+          "#7a5c9e",
+          "#5e7a2f"
         ]
       },
       "glyphs": {
@@ -273,8 +275,8 @@
         "closed": "▸",
         "currentBranch": "●",
         "dropdown": "▾",
-        "checked": "☑",
-        "unchecked": "☐",
+        "checked": "✓",
+        "unchecked": " ",
         "radioOn": "◉",
         "radioOff": "○",
         "pointer": "›",
@@ -310,7 +312,8 @@
           "cross": "┼",
           "endUp": "╵",
           "endDown": "╷"
-        }
+        },
+        "mixed": "−"
       },
       "spacing": {
         "indent": 2,
@@ -320,7 +323,8 @@
         "menuWidth": 48,
         "checklistRows": 8,
         "searchWidth": 24
-      }
+      },
+      "syntax": "light-plus"
     }
   },
   "iconSets": {

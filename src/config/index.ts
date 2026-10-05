@@ -48,7 +48,7 @@ export interface Limits {
 /** The whole configuration, defaults and user changes merged. */
 export interface Config {
   settings: ViewSettings & {
-    /** `auto` (by the terminal background), `dark`, `light`, or the name of a theme under `themes`. */
+    /** `auto` (by the terminal background), `golden-brown`, `milk-and-honey`, or the name of a theme under `themes`. */
     theme: string
     icons: string
     fileView: "path" | "status" | "tree"
@@ -141,7 +141,22 @@ const migrate = () => {
 export const loadConfig = (): Config => {
   migrate()
   const stored = readJson(USER_SETTINGS)
-  return merge(loadDefaults(), isObject(stored) ? stored : {})
+  return merge(loadDefaults(), isObject(stored) ? renameThemes(stored) : {})
+}
+
+/** Theme names older gittt versions shipped, and what they are called now. */
+const RENAMED_THEMES: Record<string, string> = { dark: "golden-brown", light: "milk-and-honey" }
+
+/** Carries settings that name a renamed theme (`dark`, `light`) over to its current name. */
+const renameThemes = (stored: Record<string, unknown>) => {
+  for (const [old, current] of Object.entries(RENAMED_THEMES)) {
+    if (isObject(stored.settings) && stored.settings.theme === old) stored.settings.theme = current
+    if (isObject(stored.themes) && old in stored.themes && !(current in stored.themes)) {
+      stored.themes[current] = stored.themes[old]
+      delete stored.themes[old]
+    }
+  }
+  return stored
 }
 
 /**
@@ -152,7 +167,7 @@ export const saveConfig = (config: Config) => writeJson(USER_SETTINGS, differenc
 
 /**
  * Puts values back to their defaults; the remembered state is kept.
- * @param path keys down to the value or section to reset, e.g. `["themes", "dark", "colors", "accent"]`; empty resets every setting
+ * @param path keys down to the value or section to reset, e.g. `["themes", "golden-brown", "colors", "accent"]`; empty resets every setting
  * @returns the configuration after the reset
  */
 export const resetConfig = (path: string[] = []): Config => {

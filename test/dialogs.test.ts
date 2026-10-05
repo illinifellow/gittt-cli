@@ -10,7 +10,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { buildDialog, dialogCommands, initialValues, validateDialog, type DialogKind, type DialogTarget, type DialogValues } from "@/dialogs"
-import { readOperation, readRepository, runGit } from "@/git"
+import { readDetails, readOperation, readRepository, runGit } from "@/git"
+import { WORKING_TREE } from "@/protocol"
 
 Object.assign(process.env, { GIT_AUTHOR_NAME: "Ada", GIT_AUTHOR_EMAIL: "ada@example.com", GIT_COMMITTER_NAME: "Ada", GIT_COMMITTER_EMAIL: "ada@example.com" })
 
@@ -23,7 +24,7 @@ const submit = async (kind: DialogKind, target: DialogTarget, change: DialogValu
   const summary = await readRepository(repository)
   const spec = buildDialog(kind, summary, target)
   const values = { ...initialValues(spec), ...change }
-  const problem = validateDialog(spec, values)
+  const problem = validateDialog(spec, values, summary)
   if (problem) return problem
   for (const command of dialogCommands(spec, values, summary, target)) await runGit(repository, command)
   return null
@@ -109,6 +110,29 @@ describe("dialogs", () => {
     expect(await submit("deleteBranch", { ref: "x-local", section: "branch" }, { force: true, remote: true })).toBeNull()
     expect(git(repository, "branch", "--list", "x-local").trim()).toBe("")
     expect(git(remote, "branch", "--list", "feature/x").trim()).toBe("")
+  })
+
+  /** Status reads which files are staged, and the commit dialog refuses an empty message or an empty selection. */
+  it("refuses a commit without a message or staged files", async () => {
+    writeFileSync(join(repository, "c.txt"), "three\n")
+    writeFileSync(join(repository, "d.txt"), "four\n")
+    const files = (await readDetails(repository, WORKING_TREE)).files
+    expect(files.map(file => [file.path, file.staged, file.unstaged])).toEqual([["c.txt", false, true], ["d.txt", false, true]])
+    expect(await submit("commit", {}, { message: "" })).toBe("Write a commit message")
+    expect(await submit("commit", {}, { message: "add c" })).toBe("Stage at least one file: tick its checkbox in the file list")
+  })
+
+  /** Committing takes only the staged file, and nothing reaches the remote unless asked. */
+  it("commits staged files only and pushes only when asked", async () => {
+    git(repository, "add", "c.txt")
+    const remoteBefore = git(remote, "rev-parse", "main").trim()
+    expect(await submit("commit", {}, { message: "add c" })).toBeNull()
+    expect(git(repository, "show", "--name-only", "--format=", "HEAD").trim()).toBe("c.txt")
+    expect(git(repository, "status", "--porcelain").trim()).toBe("?? d.txt")
+    expect(git(remote, "rev-parse", "main").trim()).toBe(remoteBefore)
+    git(repository, "add", "d.txt")
+    expect(await submit("commit", {}, { message: "add d", push: true })).toBeNull()
+    expect(git(remote, "rev-parse", "main").trim()).toBe(git(repository, "rev-parse", "HEAD").trim())
   })
 
   /** A merge stopped on a conflict is reported with its target and the conflicted file. */
