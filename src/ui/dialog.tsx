@@ -57,14 +57,15 @@ const cycle = (choices: { value: string }[], value: string, step: number) => {
  * @param state the open dialog
  * @param input typed text
  * @param key special keys
- * @returns the next state, or what to do: submit with values, or cancel
+ * @returns the next state, or what to do: submit with values, cancel, or open a link's page
  */
-export const dialogKey = (state: DialogState, input: string, key: Key): DialogState | { action: "submit" } | { action: "cancel" } => {
+export const dialogKey = (state: DialogState, input: string, key: Key): DialogState | { action: "submit" } | { action: "cancel" } | { action: "open"; url: string } => {
   const stops = stopsOf(state.spec)
   const stop = stops[state.focus]
   const field: Field | undefined = stop.kind === "cancel" || stop.kind === "submit" ? undefined : state.spec.fields[stop.field]
   const set = (key: string, value: DialogValues[string]) => ({ ...state, values: { ...state.values, [key]: value }, error: null })
   if (key.escape) return { action: "cancel" }
+  if (field?.type === "link" && (key.return || input === " ")) return { action: "open", url: field.url }
   if (key.return) return stop.kind === "cancel" ? { action: "cancel" } : { action: "submit" }
   if (key.downArrow || (key.tab && !key.shift)) return { ...state, focus: (state.focus + 1) % stops.length }
   if (key.upArrow || (key.tab && key.shift)) return { ...state, focus: (state.focus - 1 + stops.length) % stops.length }
@@ -110,6 +111,18 @@ export const dialogActivate = (state: DialogState, stop: number, choice?: string
   if (field.type === "text") return focused
   const next = dialogKey(focused, " ", {} as Key)
   return "action" in next ? focused : next
+}
+
+/**
+ * @param state the open dialog
+ * @param stop index of a control
+ * @returns the page a link control opens, or null for any other control
+ */
+export const dialogLink = (state: DialogState, stop: number): string | null => {
+  const target = stopsOf(state.spec)[stop]
+  if (!target || target.kind !== "field") return null
+  const field = state.spec.fields[target.field]
+  return field.type === "link" ? field.url : null
 }
 
 /**
@@ -163,6 +176,9 @@ export const DialogBox = ({ state, width, height, onActivate, onCancel, onSubmit
         field.choices.forEach((choice, choiceIndex) => rows.push({ stop, choice: choice.value, node: (
           <Text>{choiceIndex ? " " : marker}{choiceIndex ? " ".repeat(labelWidth) : label(field.label)}<Text color={state.values[field.key] === choice.value ? palette.accent : palette.text}>{state.values[field.key] === choice.value ? glyphs.radioOn : glyphs.radioOff} {fit(choice.label, valueWidth - 2)}</Text></Text>
         ) }))
+        break
+      case "link":
+        rows.push({ stop, node: <Text>{marker}{label(field.label)}<Text backgroundColor={field.background} color={field.color} bold>{` ${field.text} `}</Text></Text> })
         break
       case "checkbox": {
         const checked = state.values[field.key] === true
