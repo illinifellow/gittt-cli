@@ -10,7 +10,7 @@ Every repository under a folder in one sidebar, a commit graph, changed files an
 [![License: MIT](https://img.shields.io/badge/license-MIT-ff905c.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-88bd66.svg)](https://nodejs.org)
 
-<img width="900" alt="gittt showing the express repository: the sidebar with three repositories, the commit graph with branch and tag labels, the files and message of the selected commit" src="https://github.com/user-attachments/assets/752fb8e4-76f6-4c8f-a89f-3b16f4df7e86" />
+<img width="900" alt="gittt in the golden-brown theme on a dark terminal: the sidebar with three repositories, the commit graph of chalk with branch and tag labels, the pending files with checkboxes and the diff of the staged one" src="https://github.com/user-attachments/assets/01ab6cfb-6138-458a-af38-02e8b9f1ffda" />
 
 </div>
 
@@ -169,6 +169,8 @@ The two are merged on start. Toggles and drags in the app write the user file; i
 | `tokens`   | single `colors`, `glyphs` or `spacing` values laid over the active theme                                                                    |
 
 ### Themes
+
+<img width="700" alt="The same screen in the light milk-and-honey theme" src="https://github.com/user-attachments/assets/d3186946-4935-45b7-bee9-d481b50db0c3" />
 
 Two themes ship: **golden-brown** (dark, warm orange on brown-tinted grounds) and **milk-and-honey** (light, warm milky grounds with an amber accent). `settings.theme` is `auto` by default: gittt asks the terminal for its background and picks milk-and-honey on a light one and golden-brown otherwise. golden-brown is drawn on the terminal's own background (its `background` is `transparent`); milk-and-honey paints its milky ground so it stays readable on any terminal. Each theme names its code highlighting in `syntax`: `vscode` for the editor's theme, or a bundled theme such as `light-plus`. A theme of your own is another entry under `themes`; anything it leaves out comes from the shipped themes.
 
