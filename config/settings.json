@@ -100,7 +100,7 @@
   "themes": {
     "golden-brown": {
       "colors": {
-        "background": "#1e1e1e",
+        "background": "transparent",
         "text": "#e4e4e4",
         "textMuted": "#8f8f8f",
         "border": "#3a3a3a",
