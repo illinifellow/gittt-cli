@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { loadConfig, saveConfig, type Config } from "@/config"
 import { buildDialog, dialogCommands, validateDialog, type DialogKind, type DialogTarget } from "@/dialogs"
 import { parseDiff, type ParsedDiff } from "@/diff"
-import type { FileView } from "@/files"
+import { rowFiles, type FileView } from "@/files"
 import { readDetails, readDiff, readLog, readWholeFile, runGit } from "@/git"
 import { DiffHighlighter, type Segment } from "@/highlight"
 import { buildLog, collectBadges, commitNamer, describeOperation } from "@/history"
@@ -245,10 +245,10 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   }, [repository, details, config.limits.diffKilobytes, theme.syntax])
 
   /** Stages a working-tree file, or unstages it when all its changes are staged. */
-  const toggleStage = useCallback((file: ChangedFile) => {
-    if (!repository) return
-    const paths = file.previousPath ? [file.previousPath, file.path] : [file.path]
-    const unstage = file.staged && !file.unstaged
+  const toggleStage = useCallback((group: ChangedFile[]) => {
+    if (!repository || !group.length) return
+    const paths = group.flatMap(file => file.previousPath ? [file.previousPath, file.path] : [file.path])
+    const unstage = group.every(file => file.staged && !file.unstaged)
     void run(repository.path, unstage ? "unstage" : "stage", [unstage ? (repository.head.hash ? ["restore", "--staged", "--", ...paths] : ["rm", "--cached", "-r", "-q", "--", ...paths]) : ["add", "-A", "--", ...paths]], true)
   }, [repository, run])
 
@@ -502,7 +502,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     if (focus === "files") {
       if (step) return setFileCursor(Math.max(0, Math.min(fileRowsList.length - 1, fileCursor + step)))
       if (key.return) return void openFile(selectedFile)
-      if (input === " " && fileRow?.kind === "file" && details?.hash === WORKING_TREE) return toggleStage(fileRow.file)
+      if (input === " " && fileRow && details?.hash === WORKING_TREE) return toggleStage(rowFiles(fileRowsList, fileCursor))
     }
     if (focus === "diff") {
       if (step) return setDiffCursor(Math.max(0, Math.min(lines.length - 1, diffCursor + step)))
@@ -662,10 +662,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
       setViewing(null)
       if (gesture === "double" && row?.kind === "file") void openFile(row.file)
     },
-    onStage: index => {
-      const row = fileRowsList[index]
-      if (row?.kind === "file") toggleStage(row.file)
-    },
+    onStage: index => toggleStage(rowFiles(fileRowsList, index)),
     onStageAll: toggleStageAll,
     onSelect: start => {
       const point = (event: { localX: number; localY: number }) => {
