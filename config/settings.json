@@ -136,7 +136,8 @@
           "#f7a072",
           "#e5a3d6",
           "#d4c48a"
-        ]
+        ],
+        "pillText": "#1c1c1c"
       },
       "glyphs": {
         "repository": "▣",
@@ -248,7 +249,8 @@
           "#bc4c00",
           "#bf3989",
           "#6e5a00"
-        ]
+        ],
+        "pillText": "#ffffff"
       },
       "glyphs": {
         "repository": "▣",

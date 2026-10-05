@@ -34,6 +34,8 @@ export interface ColorTokens {
   addedBackground: string
   deletedBackground: string
   labelGround: number
+  /** Digits on count pills, drawn on the pill's solid colour. */
+  pillText: string
   lanes: string[]
 }
 
