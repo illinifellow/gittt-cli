@@ -182,12 +182,12 @@ Two themes ship: **golden-brown** (dark, warm orange on brown-tinted grounds) an
 
 ```sh
 npm install
-npm run build       # dist/cli.js
+npm run build       # dist/app.js and the dist/cli.js launcher
 npm run typecheck
 npm test            # graph layout and drawing, dialogs and the git layer against real repositories
 ```
 
-A running `gittt` restarts itself in place when `dist/cli.js` changes, keeping the chosen folder.
+A running `gittt` restarts itself in place when `dist/app.js` changes, keeping the chosen folder.
 
 ## Contributing
 

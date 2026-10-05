@@ -193,17 +193,46 @@ const parseNameStatus = (output: string): ChangedFile[] => {
   return files
 }
 
+/** How many commits' details and diffs stay cached; a commit never changes, so its git output is read once. */
+const COMMIT_CACHE_SIZE = 256
+
+const detailsCache = new Map<string, Promise<CommitDetails>>()
+const diffCache = new Map<string, Promise<string>>()
+
+/**
+ * Returns the cached promise for a key or starts and caches a new one, keeping the most recent entries;
+ * a failed read is forgotten so the next call tries again.
+ */
+const remember = <T>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> => {
+  const hit = cache.get(key)
+  if (hit) {
+    cache.delete(key)
+    cache.set(key, hit)
+    return hit
+  }
+  const pending = load()
+  pending.catch(() => cache.delete(key))
+  cache.set(key, pending)
+  if (cache.size > COMMIT_CACHE_SIZE) cache.delete(cache.keys().next().value as string)
+  return pending
+}
+
 /**
  * Reads a commit's metadata and changed files (against its first parent), or the working tree's changes.
  * @param path repository root
  * @param hash commit hash, or `WORKING_TREE` for uncommitted changes
- * @returns details; for the working tree the author fields are empty and the file list comes from `git status`
+ * @returns details; for the working tree the author fields are empty and the file list comes from `git status`;
+ *   a commit's details are read once and cached
  */
 export const readDetails = async (path: string, hash: string): Promise<CommitDetails> => {
   if (hash === WORKING_TREE) {
     const files = parseStatus(await runGit(path, ["status", "--porcelain=v1", "-z", "-uall"]))
     return { hash, parents: [], author: "", email: "", authorTime: 0, committer: "", message: "Uncommitted changes", files }
   }
+  return remember(detailsCache, `${path}\0${hash}`, () => readCommitDetails(path, hash))
+}
+
+const readCommitDetails = async (path: string, hash: string): Promise<CommitDetails> => {
   const header = await runGit(path, ["show", "-s", `--format=%H${UNIT}%P${UNIT}%an${UNIT}%ae${UNIT}%at${UNIT}%cn${UNIT}%B`, hash])
   const [fullHash, parents, author, email, authorTime, committer, message] = header.split(UNIT)
   const parentList = parents ? parents.split(" ") : []
@@ -240,11 +269,12 @@ export const readDiff = async (path: string, hash: string, file: ChangedFile, ma
     else if (file.status === "U") text = await runGit(path, ["diff", "--", file.path])
     else text = await runGit(path, hasHead ? ["diff", "-M", "HEAD", "--", ...paths] : ["diff", "--cached", "--", ...paths])
   } else {
-    const parents = (await runGit(path, ["show", "-s", "--format=%P", hash])).trim()
-    const parent = parents.split(" ")[0]
-    text = parent
-      ? await runGit(path, ["diff", "-M", parent, hash, "--", ...paths])
-      : await runGit(path, ["show", "--format=", "-M", hash, "--", ...paths])
+    text = await remember(diffCache, `${path}\0${hash}\0${paths.join("\0")}`, async () => {
+      const parent = (await readDetails(path, hash)).parents[0]
+      return parent
+        ? runGit(path, ["diff", "-M", parent, hash, "--", ...paths])
+        : runGit(path, ["show", "--format=", "-M", hash, "--", ...paths])
+    })
   }
   const maxLength = maxKilobytes * 1024
   return text.length > maxLength ? `${text.slice(0, maxLength)}\n\\ diff cut at ${maxKilobytes} KB` : text
