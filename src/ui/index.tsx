@@ -8,7 +8,7 @@
 import { spawn } from "node:child_process"
 import { Box, Text, useApp, useInput, useWindowSize } from "ink"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { loadConfig, saveConfig, type Config } from "@/config"
+import { loadConfig, resetConfig, saveConfig, type Config } from "@/config"
 import { buildDialog, dialogCommands, validateDialog, type DialogKind, type DialogTarget } from "@/dialogs"
 import { parseDiff, type ParsedDiff } from "@/diff"
 import { rowFiles, type FileView } from "@/files"
@@ -21,7 +21,8 @@ import { readSyntaxTheme } from "@/syntax"
 import { DiffPane, FilesPane, diffLines, fileViewLines, filesOf, gutterWidth, lineText, selectedText, type DetailsEvents, type DiffSelection } from "./details"
 import type { MouseEvent } from "@/mouse"
 import { Clickable } from "@/mouse/regions"
-import { DialogBox, dialogActivate, dialogKey, openDialogState, type DialogState } from "./dialog"
+import { DialogBox, dialogActivate, dialogKey, dialogLink, openDialogState, type DialogState } from "./dialog"
+import { applySettings, openUrl, settingsDialog, validateSettings } from "@/settings"
 import { LogPane, graphWidth, visibleRange, type LogColumn, type LogEvents } from "./log"
 import { MenuBox, type MenuItem, type MenuState } from "./menu"
 import { terminalBackground } from "@/terminal"
@@ -229,6 +230,14 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   }, [repositories, selectedPath])
 
   const submitDialog = useCallback((state: DialogState) => {
+    if (state.spec.kind === "settings") {
+      const problem = validateSettings(state.values)
+      if (problem) return setDialog({ ...state, error: problem })
+      setDialog(null)
+      if (state.values.reset === true) setConfig(resetConfig())
+      else updateConfig(draft => Object.assign(draft, applySettings(draft, state.values)))
+      return setStatus({ text: state.values.reset === true ? "settings reset to defaults" : "settings saved", error: false })
+    }
     const owner = repositories.find(candidate => candidate.path === state.path)
     if (!owner) return setDialog(null)
     const spec = buildDialog(state.spec.kind, owner, state.target)
@@ -236,7 +245,13 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     if (problem) return setDialog({ ...state, error: problem })
     setDialog(null)
     void run(state.path, spec.title.toLowerCase(), dialogCommands(spec, state.values, owner, state.target))
-  }, [repositories, run])
+  }, [repositories, run, updateConfig])
+
+  /** Opens the settings dialog over the main screen. */
+  const openSettings = useCallback(() => {
+    setMenu(null)
+    setDialog(openDialogState(selectedPath ?? "", settingsDialog(loadConfig()), {}))
+  }, [selectedPath])
 
   const checkout = useCallback((target: DialogTarget, path = selectedPath) => {
     if (!path) return
@@ -419,7 +434,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     }
     if (dialog) {
       const next = dialogKey(dialog, input, key)
-      if ("action" in next) return next.action === "cancel" ? setDialog(null) : submitDialog(dialog)
+      if ("action" in next) return next.action === "open" ? openUrl(next.url) : next.action === "cancel" ? setDialog(null) : submitDialog(dialog)
       return setDialog(next)
     }
     if (menu) {
@@ -470,6 +485,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     if (input === keys.stash) return openDialog("stash")
     if (input === keys.tag) return openDialog("tag", focus === "log" && entry && entry.hash !== WORKING_TREE ? { hash: entry.hash, subject: entry.subject } : {})
     if (input === keys.commit) return openDialog("commit")
+    if (input === keys.settings) return openSettings()
     if (input === keys.rescan) return treeEvents.onAction("rescan")
     if (input === keys.moveUp || input === keys.moveDown) return moveRepository(input === keys.moveUp ? -1 : 1)
     if (input === keys.add) return askAddRepository()
@@ -577,6 +593,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     { label: "Merge", key: config.keys.merge, run: () => openDialog("merge") },
     { label: "Stash", key: config.keys.stash, count: repository?.stashes.length, run: () => openDialog("stash") },
     { label: "Tag", key: config.keys.tag, run: () => openDialog("tag") },
+    { label: "Settings", key: config.keys.settings, run: openSettings },
   ]
   const FILTERS: { key: "branches" | "showRemoteBranches" | "order" | "compact" | "dateFormat" | "gitmoji"; label: string }[] = [
     { key: "branches", label: settings.branches === "all" ? "All Branches" : "Current Branch" },
@@ -717,7 +734,11 @@ export const App = ({ store }: { store: RepositoryStore }) => {
 
   const overlay = dialog ? (
     <DialogBox state={dialog} width={width} height={bodyHeight}
-      onActivate={(stop, choice) => setDialog(dialogActivate(dialog, stop, choice))}
+      onActivate={(stop, choice) => {
+        const url = dialogLink(dialog, stop)
+        if (url) openUrl(url)
+        setDialog(dialogActivate(dialog, stop, choice))
+      }}
       onCancel={() => setDialog(null)}
       onSubmit={() => submitDialog(dialog)} />
   ) : menu ? (

@@ -152,6 +152,8 @@ Checking out a local branch needs no dialog. Errors from git show in the toolbar
 
 ## Configuration
 
+The **Settings** dialog (`,` or the toolbar) edits the everyday options: theme, icons, file view, branches, order, dates, remote branches, compact rows, gitmoji, how many commits to show, how deep to search, folders to skip, the diff limit, the double-click time and the recent-folder count. Its last box puts every setting back to its default, and its yellow button opens [Buy Me a Coffee](https://buymeacoffee.com/illinifellow).
+
 All configuration lives in one file, `settings.json`, in two places of the same shape:
 
 | File                                    | Holds                                                                                                     |

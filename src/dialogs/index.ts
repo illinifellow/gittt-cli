@@ -28,10 +28,13 @@ export type Field =
   | { type: "checkbox"; key: string; label: string; value: boolean; warning?: string }
   | { type: "checklist"; key: string; label: string; items: ChecklistItem[] }
   | { type: "warning"; text: string }
+  /** A button that opens a web page, drawn in its own colours. */
+  | { type: "link"; label: string; text: string; url: string; background: string; color: string }
 
 /** A dialog ready to draw. */
 export interface DialogSpec {
-  kind: DialogKind
+  /** A git action, or `settings` for the settings dialog, which runs no git command. */
+  kind: DialogKind | "settings"
   title: string
   fields: Field[]
   submit: string
@@ -283,6 +286,8 @@ export const dialogCommands = (spec: DialogSpec, values: DialogValues, repositor
   const remote = text(values, "remote") || preferredRemote(repository)
   const mergeOptions = [...(flag(values, "commit") ? [] : ["--no-commit"]), ...(flag(values, "log") ? ["--log"] : []), ...(flag(values, "noFastForward") ? ["--no-ff"] : [])]
   switch (spec.kind) {
+    case "settings":
+      return []
     case "commit": {
       const message = text(values, "message")
       const commit = ["commit", ...(flag(values, "amend") ? ["--amend"] : []), ...(message ? ["-m", message] : ["--no-edit"])]
@@ -367,7 +372,7 @@ export const dialogCommands = (spec: DialogSpec, values: DialogValues, repositor
  */
 export const initialValues = (spec: DialogSpec): DialogValues =>
   Object.fromEntries(spec.fields.flatMap((field): [string, DialogValues[string]][] => {
-    if (field.type === "info" || field.type === "warning") return []
+    if (field.type === "info" || field.type === "warning" || field.type === "link") return []
     if (field.type === "checklist") return [[field.key, field.items.filter(item => item.checked).map(item => item.value)]]
     return [[field.key, field.value]]
   }))
