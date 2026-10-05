@@ -1,0 +1,21 @@
+name: Feature request
+description: Something gittt should do
+title: "feat: "
+labels: [feature]
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: What you want
+      description: The behaviour you are after, with a screenshot or sketch if it helps.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      placeholder: "- [ ] …"
