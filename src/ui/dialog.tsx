@@ -190,7 +190,7 @@ export const DialogBox = ({ state, width, height, onActivate, onCancel, onSubmit
   const submitFocused = focused.kind === "submit"
   return (
     <Box width={width} height={height} justifyContent="center" alignItems="flex-start" paddingTop={1}>
-      <Box flexDirection="column" width={boxWidth} borderStyle="round" borderColor={palette.accent} paddingX={1}>
+      <Box flexDirection="column" width={boxWidth} borderStyle="round" borderColor={palette.accent} borderBackgroundColor={palette.background} backgroundColor={palette.background} paddingX={1}>
         <Text bold color={palette.text}>{state.spec.title}</Text>
         <Text color={palette.border}>{glyphs.rule.repeat(boxWidth - 4)}</Text>
         {rows.map((row, rowIndex) => row.stop === null || row.stop < 0

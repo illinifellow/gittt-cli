@@ -209,7 +209,8 @@
         "menuWidth": 48,
         "checklistRows": 8,
         "searchWidth": 24
-      }
+      },
+      "syntax": "vscode"
     },
     "light": {
       "colors": {
@@ -322,7 +323,8 @@
         "menuWidth": 48,
         "checklistRows": 8,
         "searchWidth": 24
-      }
+      },
+      "syntax": "light-plus"
     }
   },
   "iconSets": {

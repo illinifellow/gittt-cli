@@ -97,6 +97,8 @@ export interface Theme {
   colors: ColorTokens
   glyphs: GlyphTokens
   spacing: SpacingTokens
+  /** Code highlighting in diffs: `vscode` follows the editor's theme, any other value names a bundled shiki theme. */
+  syntax: string
 }
 
 /** Partial overrides of a theme, as stored in the config. */
@@ -104,6 +106,7 @@ export interface ThemeOverrides {
   colors?: Partial<ColorTokens>
   glyphs?: Partial<GlyphTokens>
   spacing?: Partial<SpacingTokens>
+  syntax?: string
 }
 
 /** The theme used on dark terminals and when a named theme does not exist. */
@@ -125,17 +128,17 @@ export const autoTheme = (background: string | undefined) => background && lumin
 /**
  * Builds the active theme from the configuration.
  * @param config themes, icon sets, overrides and settings (`theme`, `icons`)
- * @param background the terminal background; in `auto` it chooses the theme, and it always becomes `colors.background`
+ * @param background the terminal background; only `auto` uses it, to choose the theme
  * @returns the theme components draw with; a theme name missing from `themes` falls back to the default theme
  */
 export const resolveTheme = (config: Pick<Config, "themes" | "iconSets" | "tokens"> & { settings: { theme: string; icons: string } }, background: string | undefined): Theme => {
   const name = config.settings.theme === "auto" ? autoTheme(background) : config.settings.theme
   const theme = (config.themes[name] ?? config.themes[DEFAULT_THEME]) as Theme
   const overrides = config.tokens
-  const colors = { ...theme.colors, ...overrides.colors }
   return {
-    colors: background ? { ...colors, background } : colors,
+    colors: { ...theme.colors, ...overrides.colors },
     glyphs: { ...theme.glyphs, ...config.iconSets[config.settings.icons], ...overrides.glyphs },
     spacing: { ...theme.spacing, ...overrides.spacing },
+    syntax: overrides.syntax ?? theme.syntax,
   }
 }

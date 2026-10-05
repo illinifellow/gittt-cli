@@ -19,7 +19,7 @@ import { DiffHighlighter, type Segment } from "@/highlight"
 import { buildLog, collectBadges, commitNamer, describeOperation } from "@/history"
 import { WORKING_TREE, type Commit, type CommitDetails, type Repository } from "@/protocol"
 import type { RepositoryStore } from "@/store"
-import { readEditorTheme } from "@/syntax"
+import { readSyntaxTheme } from "@/syntax"
 import { DiffPane, FilesPane, diffLines, filesOf, gutterWidth, lineText, selectedText, type DetailsEvents, type DiffSelection } from "./details"
 import type { MouseEvent } from "@/mouse"
 import { Clickable } from "@/mouse/regions"
@@ -35,7 +35,13 @@ import { TreePane, flattenTree, sectionKey, type TreeEvents, type TreeNode } fro
 type Pane = "tree" | "log" | "files" | "diff"
 
 const PANES: Pane[] = ["tree", "log", "files", "diff"]
-const highlighter = new DiffHighlighter(readEditorTheme(), loadConfig().limits)
+const highlighters = new Map<string, DiffHighlighter>()
+
+/** @returns the highlighter for a syntax theme, created once per name */
+const highlighterFor = (syntax: string) => {
+  if (!highlighters.has(syntax)) highlighters.set(syntax, new DiffHighlighter(readSyntaxTheme(syntax), loadConfig().limits))
+  return highlighters.get(syntax) as DiffHighlighter
+}
 
 const toClipboard = (text: string) => {
   const child = spawn(process.platform === "darwin" ? "pbcopy" : "xclip", process.platform === "darwin" ? [] : ["-selection", "clipboard"])
@@ -158,17 +164,17 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     void (async () => {
       const text = await readDiff(repository.path, details.hash, selectedFile, config.limits.diffKilobytes)
       if (!current) return
-      if (lastDiffText.current.key === `${selectedFile.path}\0${text}`) return
-      lastDiffText.current = { key: `${selectedFile.path}\0${text}` }
+      if (lastDiffText.current.key === `${theme.syntax}\0${selectedFile.path}\0${text}`) return
+      lastDiffText.current = { key: `${theme.syntax}\0${selectedFile.path}\0${text}` }
       const parsed = parseDiff(text)
       setDiff({ file: selectedFile.path, parsed, highlights: null })
-      const highlights = await highlighter.highlight(selectedFile.path, text, parsed, partial => current && setDiff({ file: selectedFile.path, parsed, highlights: partial }))
+      const highlights = await highlighterFor(theme.syntax).highlight(selectedFile.path, text, parsed, partial => current && setDiff({ file: selectedFile.path, parsed, highlights: partial }))
       if (current && highlights) setDiff({ file: selectedFile.path, parsed, highlights })
     })().catch(() => current && setDiff(null))
     return () => {
       current = false
     }
-  }, [repository?.path, details, selectedFile?.path])
+  }, [repository?.path, details, selectedFile?.path, theme.syntax])
 
   const treeNodes = useMemo(() => flattenTree(repositories, expanded, filter, palette, glyphs), [repositories, expanded, filter, palette, glyphs])
   const node: TreeNode | undefined = treeNodes[Math.min(treeCursor, treeNodes.length - 1)]
@@ -671,7 +677,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
       onClose={() => setMenu(null)} />
   ) : prompt ? (
     <Box width={width} height={bodyHeight} justifyContent="center" alignItems="flex-start" paddingTop={2}>
-      <Box flexDirection="column" width={Math.min(theme.spacing.dialogWidth + 6, width - 4)} borderStyle="round" borderColor={palette.accent} paddingX={1}>
+      <Box flexDirection="column" width={Math.min(theme.spacing.dialogWidth + 6, width - 4)} borderStyle="round" borderColor={palette.accent} borderBackgroundColor={palette.background} backgroundColor={palette.background} paddingX={1}>
         <Text bold color={palette.text}>{prompt.label}</Text>
         <Text backgroundColor={palette.field} color={palette.text}>{fit(`${prompt.value}${glyphs.cursor}`, Math.min(theme.spacing.dialogWidth + 2, width - 8))}</Text>
         <Box justifyContent="flex-end" gap={2}>
@@ -687,7 +693,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
 
   return (
     <ThemeProvider value={theme}>
-    <Box flexDirection="column" width={width} height={height}>
+    <Box flexDirection="column" width={width} height={height} backgroundColor={palette.background}>
       <Box height={1} width={width} overflow="hidden">
         <Text color={palette.accent} bold>{" gittt   "}</Text>
         {TOOLS.map(tool => (
