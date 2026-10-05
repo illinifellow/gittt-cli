@@ -26,9 +26,13 @@ import { LogPane, graphWidth, visibleRange, type LogColumn, type LogEvents } fro
 import { MenuBox, type MenuItem, type MenuState } from "./menu"
 import { terminalBackground } from "@/terminal"
 import { resolveTheme } from "@/theme"
+import { availableUpdate, installUpdate } from "@/update"
 import { fit } from "./text"
 import { ThemeProvider } from "./theme"
 import { TreePane, flattenTree, sectionKey, type TreeEvents, type TreeNode } from "./tree"
+
+/** How often a running gittt asks GitHub for a newer release: every six hours. */
+const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000
 
 type Pane = "tree" | "log" | "files" | "diff"
 
@@ -84,6 +88,21 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   const [prompt, setPrompt] = useState<{ label: string; value: string; onSubmit: (value: string) => void } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null)
+  const [update, setUpdate] = useState<string | null>(null)
+
+  useEffect(() => {
+    const check = () => void availableUpdate().then(version => setUpdate(version))
+    check()
+    const timer = setInterval(check, UPDATE_CHECK_MS)
+    return () => clearInterval(timer)
+  }, [])
+
+  /** Installs the newer release; the bundle changing on disk restarts gittt with the same folder. */
+  const applyUpdate = useCallback(() => {
+    if (!update || busy) return
+    setBusy(`updating to ${update}`)
+    void installUpdate(update).then(() => setStatus({ text: `updated to ${update}, restarting`, error: false }), (error: Error) => setStatus({ text: error.message, error: true })).finally(() => setBusy(null))
+  }, [update, busy])
   useEffect(() => {
     if (!status) return
     const timer = setTimeout(() => setStatus(null), status.error ? config.limits.errorStatusMs : config.limits.statusMs)
@@ -741,6 +760,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
         ))}
         <Box flexGrow={1} />
         <Text color={status?.error ? palette.stash : palette.textMuted} wrap="truncate-start">{busy ? `⟳ ${busy}… ` : status ? `${status.text} ` : scanning ? "searching repositories… " : ""}</Text>
+        {update ? <Clickable flexShrink={0} onClick={applyUpdate}><Text backgroundColor={palette.accent} color={palette.accentText} bold>{" Update "}</Text><Text> </Text></Clickable> : null}
       </Box>
       <Text color={palette.border}>{glyphs.rule.repeat(width)}</Text>
       {overlay ?? (
