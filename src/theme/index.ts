@@ -67,6 +67,8 @@ export interface GlyphTokens {
   dropdown: string
   checked: string
   unchecked: string
+  /** A checkbox that is partly on: a file with some changes staged and some not. */
+  mixed: string
   radioOn: string
   radioOff: string
   pointer: string

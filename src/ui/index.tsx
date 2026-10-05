@@ -5,22 +5,20 @@
  * dialog; the context menu ("." or a right click) lists the actions for the
  * row; every element answers the mouse.
  */
-import { execFile, spawn } from "node:child_process"
-import { existsSync } from "node:fs"
-import { join } from "node:path"
+import { spawn } from "node:child_process"
 import { Box, Text, useApp, useInput, useWindowSize } from "ink"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { loadConfig, saveConfig, type Config } from "@/config"
 import { buildDialog, dialogCommands, validateDialog, type DialogKind, type DialogTarget } from "@/dialogs"
 import { parseDiff, type ParsedDiff } from "@/diff"
 import type { FileView } from "@/files"
-import { readDetails, readDiff, readLog, runGit } from "@/git"
+import { readDetails, readDiff, readLog, readWholeFile, runGit } from "@/git"
 import { DiffHighlighter, type Segment } from "@/highlight"
 import { buildLog, collectBadges, commitNamer, describeOperation } from "@/history"
-import { WORKING_TREE, type Commit, type CommitDetails, type Repository } from "@/protocol"
+import { WORKING_TREE, type ChangedFile, type Commit, type CommitDetails, type Repository } from "@/protocol"
 import type { RepositoryStore } from "@/store"
 import { readSyntaxTheme } from "@/syntax"
-import { DiffPane, FilesPane, diffLines, filesOf, gutterWidth, lineText, selectedText, type DetailsEvents, type DiffSelection } from "./details"
+import { DiffPane, FilesPane, diffLines, fileViewLines, filesOf, gutterWidth, lineText, selectedText, type DetailsEvents, type DiffSelection } from "./details"
 import type { MouseEvent } from "@/mouse"
 import { Clickable } from "@/mouse/regions"
 import { DialogBox, dialogActivate, dialogKey, openDialogState, type DialogState } from "./dialog"
@@ -76,6 +74,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   const [diffCursor, setDiffCursor] = useState(0)
   const lastDiffText = useRef({ key: "" })
   const [selection, setSelection] = useState<DiffSelection | null>(null)
+  const [viewing, setViewing] = useState<{ file: ChangedFile; text: string; highlights: Segment[][] | null } | null>(null)
   const [focus, setFocus] = useState<Pane>("log")
   const [dialog, setDialog] = useState<DialogState | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
@@ -146,7 +145,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     return () => {
       current = false
     }
-  }, [repository?.path, entryHash, changes])
+  }, [repository?.path, entryHash, changes, repository?.staged, repository?.conflicts])
 
   const fileView = settings.fileView as FileView
   const fileRowsList = useMemo(() => filesOf(details, fileView), [details, fileView])
@@ -184,14 +183,14 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   }, [query, log.entries])
   const badges = repository && details ? collectBadges(repository).get(details.hash) ?? [] : []
   const operation = repository && details?.hash === WORKING_TREE ? describeOperation(repository, commitNamer(repository)) : ""
-  const lines = useMemo(() => diffLines(details, badges, operation, diff, settings.gitmoji, theme), [details, diff, operation, settings.gitmoji, palette, badges.length])
+  const lines = useMemo(() => viewing ? fileViewLines(viewing.file.path, viewing.text, viewing.highlights, theme) : diffLines(details, badges, operation, diff, settings.gitmoji, theme), [viewing, details, diff, operation, settings.gitmoji, palette, badges.length])
 
-  const run = useCallback(async (path: string, label: string, commands: string[][]) => {
+  const run = useCallback(async (path: string, label: string, commands: string[][], quiet = false) => {
     setBusy(label)
     setStatus(null)
     try {
       for (const command of commands) await runGit(path, command)
-      setStatus({ text: `${label}: done`, error: false })
+      if (!quiet) setStatus({ text: `${label}: done`, error: false })
     } catch (error) {
       setStatus({ text: error instanceof Error ? error.message.split("\n").slice(-3).join(" ") : String(error), error: true })
     } finally {
@@ -211,7 +210,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     const owner = repositories.find(candidate => candidate.path === state.path)
     if (!owner) return setDialog(null)
     const spec = buildDialog(state.spec.kind, owner, state.target)
-    const problem = validateDialog(spec, state.values)
+    const problem = validateDialog(spec, state.values, owner)
     if (problem) return setDialog({ ...state, error: problem })
     setDialog(null)
     void run(state.path, spec.title.toLowerCase(), dialogCommands(spec, state.values, owner, state.target))
@@ -223,18 +222,44 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     openDialog(target.section === "remote" ? "checkoutRemote" : "checkout", target, path)
   }, [openDialog, run, selectedPath])
 
-  const openInEditor = useCallback((line?: number, chosen = selectedFile) => {
-    if (!repository || !chosen) return
-    const file = join(repository.path, chosen.path)
-    if (!existsSync(file)) return setStatus({ text: `${chosen.path} is not in the working tree`, error: true })
-    execFile("code", ["-g", line ? `${file}:${line}` : file], error => error && setStatus({ text: `code -g failed: ${error.message}`, error: true }))
-    setStatus({ text: `opened ${chosen.path}${line ? `:${line}` : ""} in VS Code`, error: false })
-  }, [repository, selectedFile])
+  /** Opens a whole file in the diff pane, at a line if given, highlighted in the theme's syntax colours. */
+  const openFile = useCallback(async (file: ChangedFile | null | undefined, line?: number) => {
+    if (!repository || !details || !file) return
+    const text = await readWholeFile(repository.path, details.hash, file, config.limits.diffKilobytes).catch((error: Error) => {
+      setStatus({ text: error.message.split("\n").slice(-2).join(" "), error: true })
+      return null
+    })
+    if (text === null) return
+    const view = { file, text, highlights: null as Segment[][] | null }
+    setViewing(view)
+    setSelection(null)
+    setFocus("diff")
+    setDiffCursor(line ?? 1)
+    const source = text.endsWith("\n") ? text.slice(0, -1).split("\n") : text.split("\n")
+    const parsed = { header: [], hunks: [{ header: "", oldStart: 1, newStart: 1, newCount: source.length, lines: source.map(code => ` ${code}`) }], binary: false, combined: false }
+    const highlighted = await highlighterFor(theme.syntax).highlight(file.path, `whole\0${text}`, parsed, partial => setViewing(current => current?.file === file ? { ...view, highlights: partial[0] } : current)).catch(() => null)
+    if (highlighted) setViewing(current => current?.file === file ? { ...view, highlights: highlighted[0] } : current)
+  }, [repository, details, config.limits.diffKilobytes, theme.syntax])
+
+  /** Stages a working-tree file, or unstages it when all its changes are staged. */
+  const toggleStage = useCallback((file: ChangedFile) => {
+    if (!repository) return
+    const paths = file.previousPath ? [file.previousPath, file.path] : [file.path]
+    const unstage = file.staged && !file.unstaged
+    void run(repository.path, unstage ? "unstage" : "stage", [unstage ? (repository.head.hash ? ["restore", "--staged", "--", ...paths] : ["rm", "--cached", "-r", "-q", "--", ...paths]) : ["add", "-A", "--", ...paths]], true)
+  }, [repository, run])
+
+  /** Stages every working-tree change, or unstages everything when all of it is staged. */
+  const toggleStageAll = useCallback(() => {
+    if (!repository || !details) return
+    const unstage = details.files.length > 0 && details.files.every(file => file.staged && !file.unstaged)
+    void run(repository.path, unstage ? "unstage all" : "stage all", [unstage ? (repository.head.hash ? ["restore", "--staged", "--", "."] : ["rm", "--cached", "-r", "-q", "--", "."]) : ["add", "-A"]], true)
+  }, [repository, details, run])
 
   const commitMenu = (entry = log.entries[logCursor]): MenuItem[] => {
     if (!entry || !repository) return []
     const target: DialogTarget = { hash: entry.hash, section: "commit", subject: entry.subject }
-    if (entry.hash === WORKING_TREE) return [{ label: "Stash Changes…", run: () => openDialog("stash") }]
+    if (entry.hash === WORKING_TREE) return [{ label: "Commit…", run: () => openDialog("commit") }, { label: "Stage All", run: toggleStageAll }, { label: "Stash Changes…", run: () => openDialog("stash") }]
     return [
       { label: "Checkout…", run: () => checkout(target) },
       { label: "Merge…", run: () => openDialog("merge", target), separator: true },
@@ -422,7 +447,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     if (input === keys.merge) return openDialog("merge")
     if (input === keys.stash) return openDialog("stash")
     if (input === keys.tag) return openDialog("tag", focus === "log" && entry && entry.hash !== WORKING_TREE ? { hash: entry.hash, subject: entry.subject } : {})
-    if (input === keys.commit) return setStatus({ text: "Commit: stage and commit in VS Code Source Control or with git commit", error: false })
+    if (input === keys.commit) return openDialog("commit")
     if (input === keys.rescan) return treeEvents.onAction("rescan")
     if (input === keys.moveUp || input === keys.moveDown) return moveRepository(input === keys.moveUp ? -1 : 1)
     if (input === keys.add) return askAddRepository()
@@ -437,7 +462,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     if (input === keys.authorNarrower || input === keys.authorWider) return resizeColumn("author", input === keys.authorWider ? 2 : -2)
     if (input === keys.dateNarrower || input === keys.dateWider) return resizeColumn("date", input === keys.dateWider ? 2 : -2)
     if (input === keys.sidebarNarrower || input === keys.sidebarWider) return resizeColumn("tree", input === keys.sidebarWider ? 2 : -2)
-    if (input === keys.menu || input === " " && focus !== "tree") {
+    if (input === keys.menu || input === " " && (focus === "log" || focus === "diff")) {
       const items = focus === "tree" ? treeMenu() : focus === "log" ? commitMenu() : []
       if (items.length) setMenu({ title: focus === "tree" ? node?.label ?? "" : entry?.subject ?? "", items, cursor: 0 })
       return
@@ -473,11 +498,13 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     }
     if (focus === "files") {
       if (step) return setFileCursor(Math.max(0, Math.min(fileRowsList.length - 1, fileCursor + step)))
-      if (key.return) return openInEditor()
+      if (key.return) return void openFile(selectedFile)
+      if (input === " " && fileRow?.kind === "file" && details?.hash === WORKING_TREE) return toggleStage(fileRow.file)
     }
     if (focus === "diff") {
       if (step) return setDiffCursor(Math.max(0, Math.min(lines.length - 1, diffCursor + step)))
-      if (key.return) return openInEditor(lines[diffCursor]?.line)
+      if (key.escape && viewing) return setViewing(null)
+      if (key.return && !viewing) return void openFile(selectedFile, lines[diffCursor]?.line)
     }
   })
 
@@ -519,7 +546,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   const graph = graphWidth(log.rows.slice(shownRows.start, shownRows.end), config.columns, settings.compact)
   const description = descriptionWidth(mainWidth, graph, config.columns)
 
-  const commitAction = () => setStatus({ text: "Commit: stage and commit in VS Code Source Control or with git commit", error: false })
+  const commitAction = () => openDialog("commit")
   const TOOLS: { label: string; key: string; count?: number; run: () => void }[] = [
     { label: "Commit", key: config.keys.commit, count: changes, run: commitAction },
     { label: "Pull", key: config.keys.pull, count: current?.behind, run: () => openDialog("pull") },
@@ -629,8 +656,14 @@ export const App = ({ store }: { store: RepositoryStore }) => {
       setFocus("files")
       setFileCursor(index)
       const row = fileRowsList[index]
-      if (gesture === "double" && row?.kind === "file") openInEditor(undefined, row.file)
+      setViewing(null)
+      if (gesture === "double" && row?.kind === "file") void openFile(row.file)
     },
+    onStage: index => {
+      const row = fileRowsList[index]
+      if (row?.kind === "file") toggleStage(row.file)
+    },
+    onStageAll: toggleStageAll,
     onSelect: start => {
       const point = (event: { localX: number; localY: number }) => {
         const line = Math.max(0, Math.min(lines.length - 1, diffScroll + event.localY))
@@ -654,7 +687,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
       setFocus("diff")
       setDiffCursor(index)
       if (lines[index]?.copy) return copy(lines[index].copy as string)
-      if (gesture === "double") openInEditor(lines[index]?.line)
+      if (gesture === "double" && !viewing) void openFile(selectedFile, lines[index]?.line)
     },
   }
 

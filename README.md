@@ -36,7 +36,8 @@ Every repository under a folder in one sidebar, a commit graph, changed files an
 - **Live:** edits, commits, checkouts, fetches and new refs show up within about a second.
 - **States made visible:** uncommitted changes, a rebase, merge, cherry-pick, revert or bisect stopped half way, conflicts, a detached HEAD.
 - **Files and diffs:** sorted by path, by status or as a tree, with old and new line numbers. Code is highlighted in the colours of your VS Code theme or the theme's own.
-- **A dialog for every action:** fetch, pull, push, branch, merge, stash, tag, checkout, reset, rebase, cherry-pick, revert and more.
+- **Everything inside gittt:** stage files with checkboxes, commit (and push if you want) from a dialog, open any file in the viewer; nothing is handed to another program.
+- **A dialog for every action:** commit, fetch, pull, push, branch, merge, stash, tag, checkout, reset, rebase, cherry-pick, revert and more.
 - **Mouse everywhere:** clicks, double clicks, right-click menus, wheel and sideways scrolling, draggable dividers and columns, text selection in diffs.
 - **Fast on large files:** highlighting runs in pieces that never block input.
 
@@ -44,7 +45,6 @@ Every repository under a folder in one sidebar, a commit graph, changed files an
 
 - Node.js 20 or newer and `git` on `PATH`.
 - A terminal with true colour and SGR mouse reporting. Tested in iTerm2 and the VS Code integrated terminal on macOS.
-- Optional: the `code` command, to open files in VS Code.
 
 ## Install
 
@@ -80,69 +80,72 @@ The first screen asks for the folder to search. Tab completes a path, the arrows
 | Sidebar    | One row per repository with its change count, ahead/behind and current branch. Inside: WORKSPACE (File status, History, Search), BRANCHES, REMOTES, TAGS, STASHES. Above the list: Add, Rescan, ↑ and ↓. |
 | Filter bar | All / Current Branch, Show / Hide Remote Branches, Ancestor / Date Order, Large / Compact View, Absolute / Relative Dates, Gitmoji / Shortcodes.                                                         |
 | Log        | Graph, Description, Commit, Author, Date. The working tree is its own row; a stopped operation and its conflicts are shown on it.                                                                        |
-| Files      | The selected commit's files or the pending ones: by path, by status (conflicts first) or as a folder tree.                                                                                               |
-| Diff       | Commit header (Commit, Parents, Author, Date, Labels, message) and the selected file's diff, hunk by hunk.                                                                                               |
+| Files      | The selected commit's files or the pending ones: by path, by status (conflicts first) or as a folder tree. Pending files carry a checkbox: ticked files are staged for the next commit.                  |
+| Diff       | Commit header (Commit, Parents, Author, Date, Labels, message) and the selected file's diff, hunk by hunk; or a whole file, opened with a double click or Enter.                                         |
 
 Compact View draws the graph one cell per lane and shows authors without email. Highlighting uses the theme VS Code is set to, `editor.tokenColorCustomizations` included, and falls back to Dark+ without VS Code.
 
 ## Dialogs
 
-| Action                      | Options                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------------- |
-| Fetch                       | all remotes, prune, tags                                                              |
-| Pull                        | remote and branch, commit merged changes, include messages, no fast-forward, rebase   |
-| Push                        | remote, branches with their upstreams, track new branches, all tags, force with lease |
-| New Branch                  | name, from the working copy parent or a specified commit, checkout                    |
-| Delete Branches             | local and remote branches, force                                                      |
-| Merge                       | branch or commit, commit merged changes, include messages, no fast-forward, rebase    |
-| Stash                       | message, keep staged changes, include untracked files                                 |
-| Add Tag                     | name, commit, push, lightweight, message, move an existing tag                        |
-| Checkout                    | branch at the commit or a detached HEAD; remote branch as a new tracking branch       |
-| Rename / Delete Branch      | new name; force, also delete the upstream                                             |
-| Remove / Push Tag           | from all remotes; to a chosen remote                                                  |
-| Reset                       | soft, mixed or hard                                                                   |
-| Rebase, Cherry-pick, Revert | confirmation; commit immediately, add "cherry picked from"                            |
-| Apply / Pop / Delete Stash  | delete after applying, restore the staged state                                       |
+| Action                      | Options                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| Commit                      | message, amend the last commit, push immediately (off by default); commits the staged files |
+| Fetch                       | all remotes, prune, tags                                                                    |
+| Pull                        | remote and branch, commit merged changes, include messages, no fast-forward, rebase         |
+| Push                        | remote, branches with their upstreams, track new branches, all tags, force with lease       |
+| New Branch                  | name, from the working copy parent or a specified commit, checkout                          |
+| Delete Branches             | local and remote branches, force                                                            |
+| Merge                       | branch or commit, commit merged changes, include messages, no fast-forward, rebase          |
+| Stash                       | message, keep staged changes, include untracked files                                       |
+| Add Tag                     | name, commit, push, lightweight, message, move an existing tag                              |
+| Checkout                    | branch at the commit or a detached HEAD; remote branch as a new tracking branch             |
+| Rename / Delete Branch      | new name; force, also delete the upstream                                                   |
+| Remove / Push Tag           | from all remotes; to a chosen remote                                                        |
+| Reset                       | soft, mixed or hard                                                                         |
+| Rebase, Cherry-pick, Revert | confirmation; commit immediately, add "cherry picked from"                                  |
+| Apply / Pop / Delete Stash  | delete after applying, restore the staged state                                             |
 
-Checking out a local branch needs no dialog. Errors from git show in the toolbar. Staging, committing and resolving conflicts are left to git or your editor.
+Checking out a local branch needs no dialog. Errors from git show in the toolbar.
 
 ## Keyboard
 
-| Key                             | Action                                                          |
-| ------------------------------- | --------------------------------------------------------------- |
-| `Tab` `Shift+Tab`               | next / previous pane                                            |
-| `↑` `↓` `PgUp` `PgDn`           | move                                                            |
-| `Home` `End`                    | first / last commit                                             |
-| `←` `→`                         | fold / unfold in the sidebar, scroll sideways elsewhere         |
-| `Shift+←` `Shift+→`             | scroll the sidebar sideways                                     |
-| `Enter`                         | open a repository or section, check out, open a file in VS Code |
-| `Space`                         | fold / unfold in the sidebar, context menu elsewhere            |
-| `.`                             | context menu for the row                                        |
-| `/`                             | filter the sidebar, or search commits in the log                |
-| `y`                             | copy the selected commit's full hash                            |
-| `f` `p` `P` `b` `m` `s` `t`     | Fetch, Pull, Push, Branch, Merge, Stash, Tag                    |
-| `a` `x`                         | add a repository by path; remove the repository from the list   |
-| `K` `J`                         | move the selected repository up / down the list                 |
-| `r`                             | rescan: new repositories appear, removed ones come back         |
-| `1` – `6`                       | branches, remote branches, order, view, dates, gitmoji          |
-| `v`                             | file list: by path, by status, tree                             |
-| `[` `]` `{` `}` `(` `)` `<` `>` | narrow / widen the graph, author, date and sidebar columns      |
-| `q` `Ctrl+C`                    | quit                                                            |
+| Key                             | Action                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------ |
+| `Tab` `Shift+Tab`               | next / previous pane                                                                 |
+| `↑` `↓` `PgUp` `PgDn`           | move                                                                                 |
+| `Home` `End`                    | first / last commit                                                                  |
+| `←` `→`                         | fold / unfold in the sidebar, scroll sideways elsewhere                              |
+| `Shift+←` `Shift+→`             | scroll the sidebar sideways                                                          |
+| `Enter`                         | open a repository or section, check out, open a file in the viewer                   |
+| `Space`                         | fold / unfold in the sidebar, stage / unstage a pending file, context menu elsewhere |
+| `.`                             | context menu for the row                                                             |
+| `/`                             | filter the sidebar, or search commits in the log                                     |
+| `y`                             | copy the selected commit's full hash                                                 |
+| `c` `f` `p` `P` `b` `m` `s` `t` | Commit, Fetch, Pull, Push, Branch, Merge, Stash, Tag                                 |
+| `Esc`                           | close the file viewer, a dialog or a menu                                            |
+| `a` `x`                         | add a repository by path; remove the repository from the list                        |
+| `K` `J`                         | move the selected repository up / down the list                                      |
+| `r`                             | rescan: new repositories appear, removed ones come back                              |
+| `1` – `6`                       | branches, remote branches, order, view, dates, gitmoji                               |
+| `v`                             | file list: by path, by status, tree                                                  |
+| `[` `]` `{` `}` `(` `)` `<` `>` | narrow / widen the graph, author, date and sidebar columns                           |
+| `q` `Ctrl+C`                    | quit                                                                                 |
 
 ## Mouse
 
-| Gesture                 | Action                                                                            |
-| ----------------------- | --------------------------------------------------------------------------------- |
-| click                   | select, press a button, toggle a filter or a dialog option                        |
-| double-click            | check out a branch, tag or commit; open a file in VS Code (at the line in a diff) |
-| right-click             | context menu                                                                      |
-| wheel                   | scroll the pane under the pointer                                                 |
-| `Shift`+wheel, trackpad | scroll sideways                                                                   |
-| drag a divider          | resize the sidebar, the log and files, the files and diff, any column             |
-| drag a repository row   | move the repository up or down the list                                           |
-| drag in the diff        | select text; it is copied to the clipboard on release                             |
-| click a hash            | copy the full hash                                                                |
-| `⌥` drag (iTerm2)       | the terminal's own selection anywhere                                             |
+| Gesture                 | Action                                                                                 |
+| ----------------------- | -------------------------------------------------------------------------------------- |
+| click                   | select, press a button, toggle a filter or a dialog option                             |
+| double-click            | check out a branch, tag or commit; open a file in the viewer (at the line from a diff) |
+| right-click             | context menu                                                                           |
+| wheel                   | scroll the pane under the pointer                                                      |
+| `Shift`+wheel, trackpad | scroll sideways                                                                        |
+| drag a divider          | resize the sidebar, the log and files, the files and diff, any column                  |
+| drag a repository row   | move the repository up or down the list                                                |
+| drag in the diff        | select text; it is copied to the clipboard on release                                  |
+| click a checkbox        | stage or unstage a pending file; the header checkbox does all of them                  |
+| click a hash            | copy the full hash                                                                     |
+| `⌥` drag (iTerm2)       | the terminal's own selection anywhere                                                  |
 
 ## Configuration
 

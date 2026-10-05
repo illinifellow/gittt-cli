@@ -199,7 +199,8 @@
           "cross": "┼",
           "endUp": "╵",
           "endDown": "╷"
-        }
+        },
+        "mixed": "⊟"
       },
       "spacing": {
         "indent": 2,
@@ -313,7 +314,8 @@
           "cross": "┼",
           "endUp": "╵",
           "endDown": "╷"
-        }
+        },
+        "mixed": "⊟"
       },
       "spacing": {
         "indent": 2,
