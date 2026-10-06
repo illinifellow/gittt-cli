@@ -12,46 +12,38 @@
 
 ![gittt in the light milk-and-honey theme: four repositories in the sidebar, the commit graph of ferrule with its feature branches, tags and merges, and the pending Rust change highlighted in the diff](docs/light.png)
 
-It started with a screen split in two. On one side the code, on the other the terminal where the work runs, and no room for a third window. Every look at the history, every diff before a commit, every check of which branch is where meant leaving that screen: switching to a desktop git client, moving to another monitor, finding the right repository again, and coming back. The wish was to have the git client in the same place as everything else, inside the terminal that already sits on that half of the screen, so that a whole working session fits on one display.
+It started with a screen split in two: code on one side, the terminal on the other. Every look at history or a diff meant leaving it for a desktop git client. The goal was a git client inside that terminal, so a whole session fits on one display.
 
-The existing terminal clients did not fill that gap. They live in the right place, but they read like a keyboard reference card: panels without a familiar shape, a key for everything and a mouse for nothing, one repository at a time, and a new grammar to learn before anything is shown. The desktop clients, on the other hand, get the layout right: repositories on the left, the graph in the middle, the files and the diff underneath, a toolbar with Commit, Pull, Push and Fetch, a dialog when an action has options.
-
-So the aim was that desktop layout inside the terminal, in a window as narrow as half a screen, behaving like an application rather than a command: nothing handed to another program, every state of git visible on the row where it happens, and nothing slow allowed to block a keystroke. The first attempts drew panes as text and redrew everything on every change; that was simple and too slow on a big history, and the mouse had nothing to grab. What worked was treating each pane as a region with its own scroll, focus and hit-testing, laying the graph out once per history, and colouring code in small batches between keystrokes so a long diff scrolls while it is still being highlighted.
+Terminal clients live in the right place but read like a reference card: a key for everything, no mouse, one repository at a time. Desktop clients get the layout right: repositories on the left, graph in the middle, files and diff below, a toolbar, a dialog per action. gittt puts that layout into a half-screen terminal. Redrawing panes as text was too slow on big histories; what worked was panes as regions with their own scroll, focus and hit-testing, a graph laid out once per history, and highlighting in small batches between keystrokes.
 
 ![The same screen in the dark golden-brown theme: lumenboard with staged and unstaged files and a TypeScript diff](docs/dark.png)
 
 ## How it's built
 
-TypeScript on Node 22, talking to `git` directly and drawing to the terminal with true colour and SGR mouse reporting. A file watcher refreshes the screen within a second of any change, reading each repository's summary one read at a time through a small shared pool; actions on a repository wait their turn, and a background fetch steps aside for them. Remotes are fetched quietly in the background, the commit graph is drawn in rounded box characters with one colour per lane, and syntax highlighting follows the VS Code theme when there is one.
+TypeScript on Node 22, calling `git` directly, drawing with true colour and SGR mouse reporting. A file watcher refreshes within a second through a small shared read pool; actions on a repository queue, and background fetches yield to them.
 
 ## Features
 
-- **One catalogue for many repositories:** every repository under a folder, in an order you choose. Repositories can be added from anywhere by path and removed from the list without touching the folder.
-- **Commit graph:** lanes in their own colours, merges and forks drawn with rounded corners. Branch, remote and tag labels sit on tinted grounds.
-- **Live:** edits, commits, checkouts, fetches and new refs show up within about a second, linked worktrees and submodules included, and remotes are fetched in the background every few minutes. **Refresh** (`R`) rereads everything and fetches every remote at once.
-- **States made visible:** uncommitted changes, a rebase, merge, cherry-pick, revert or bisect stopped half way, conflicts, a detached HEAD.
-- **Files and diffs:** sorted by path, by status or as a tree, with old and new line numbers. Code is highlighted in the colours of your VS Code theme or the theme's own.
-- **Everything inside gittt:** stage files with checkboxes, commit (and push if you want) from a dialog, open any file in the viewer; nothing is handed to another program.
-- **A dialog for every action:** commit, fetch, pull, push, branch, merge, stash, tag, checkout, reset, rebase, cherry-pick, revert and more.
-- **Mouse everywhere:** clicks, double clicks, right-click menus, wheel and sideways scrolling, draggable dividers and columns, text selection in diffs.
-- **Fast on large files:** highlighting runs in pieces that never block input.
+- **Many repositories:** everything under a folder, in your order; add any by path, remove from the list without touching disk.
+- **Commit graph:** coloured lanes, rounded merges, tinted branch, remote and tag labels.
+- **Live:** changes, worktrees and submodules included, appear within a second; remotes are fetched every few minutes. `R` rereads everything and fetches all remotes.
+- **Visible states:** uncommitted changes, a stopped rebase, merge, cherry-pick, revert or bisect, conflicts, detached HEAD.
+- **Files and diffs:** by path, status or tree, with line numbers, highlighted in your VS Code theme.
+- **Self-contained:** stage with checkboxes, commit and push from a dialog, view any file; nothing opens another program.
+- **Dialogs** for every action, **mouse** everywhere, highlighting that never blocks input.
 
 ## Requirements
 
-- Node.js 22.15 or newer and `git` 2.31 or newer on `PATH`.
-- A terminal with true colour and SGR mouse reporting. Tested in iTerm2 and the VS Code integrated terminal on macOS.
+- Node.js 22.15+ and `git` 2.31+ on `PATH`.
+- A terminal with true colour and SGR mouse reporting; tested in iTerm2 and the VS Code terminal on macOS.
 
 ## Install
-
-The latest release from GitHub:
 
 ```sh
 npm install --global https://github.com/illinifellow/gittt-cli/releases/latest/download/gittt-cli.tgz
 ```
 
-A running gittt shows **Update** at the right end of the toolbar when a newer release exists; a click installs it and restarts in place.
-
-From a clone:
+**Update** appears in the toolbar when a newer release exists; a click installs it and restarts in place. From a clone:
 
 ```sh
 git clone https://github.com/illinifellow/gittt-cli.git
@@ -67,108 +59,108 @@ gittt            # asks which folder to search, prefilled with the current one
 gittt ~/code     # prefills that folder instead
 ```
 
-The first screen asks for the folder to search. Tab completes a path, the arrows or the mouse pick a recent folder, and Enter starts. The folder is searched three levels deep. `node_modules`, build output and tool caches are skipped.
+Tab completes, arrows or mouse pick a recent folder, Enter starts. The search goes three levels deep, skipping `node_modules`, build output and caches.
 
 ## The screen
 
-The toolbar across the top carries Commit, Pull, Push, Fetch, Refresh, Branch, Merge, Stash, Tag and Settings with their counts, and short messages appear at its right end: a copied hash, a finished action, an error. The sidebar has one row per repository with its change count, ahead and behind, and current branch; inside a repository are WORKSPACE (file status, history, search), BRANCHES, REMOTES, TAGS and STASHES, with Add, Rescan, ↑ and ↓ above the list. The filter bar switches All or Current Branch, remote branches, ancestor or date order, large or compact view, absolute or relative dates, and gitmoji or shortcodes. The log shows the graph, description, commit, author and date; the working tree is its own row, and a stopped operation and its conflicts are shown on it. The files pane lists the selected commit's files or the pending ones, by path, by status with conflicts first, or as a folder tree, and pending files carry a checkbox that stages them for the next commit; a conflicted file still holding conflict markers is not staged. The diff pane shows the commit header and the selected file's diff hunk by hunk, or a whole file opened with a double click or Enter, with tabs expanded to `limits.tabWidth` cells. A terminal smaller than the layout needs says so instead of drawing broken panes.
+The toolbar holds Commit, Pull, Push, Fetch, Refresh, Branch, Merge, Stash, Tag and Settings with counts, and short messages at its right end. The sidebar lists repositories with change count, ahead/behind and branch; each opens into WORKSPACE (status, history, search), BRANCHES, REMOTES, TAGS and STASHES. The filter bar toggles all or current branch, remote branches, ancestor or date order, compact view, relative dates and gitmoji. The log shows graph, description, commit, author and date; the working tree is its own row, with any stopped operation and conflicts. Files list by path, status (conflicts first) or tree; a checkbox stages a pending file, except one still holding conflict markers. The diff shows hunks, or a whole file on double-click or Enter, tabs expanded to `limits.tabWidth`.
 
-Compact View draws the graph one cell per lane and shows authors without email. Highlighting uses the theme VS Code is set to, `editor.tokenColorCustomizations` included, and falls back to Dark+ without VS Code.
+A terminal too small says so instead of drawing broken panes. Compact View uses one cell per lane and hides emails. Highlighting reads VS Code's theme and `editor.tokenColorCustomizations`, falling back to Dark+.
 
 ## Dialogs
 
-| Action                      | Options                                                                                          |
-| --------------------------- | ------------------------------------------------------------------------------------------------ |
-| Commit                      | message, amend the last commit, push immediately (off by default); commits the staged files      |
-| Fetch                       | all remotes, prune, tags                                                                         |
-| Pull                        | remote and one of its branches, commit merged changes, include messages, no fast-forward, rebase |
-| Push                        | remote, branches with their upstreams, track new branches, all tags, force                       |
-| New Branch                  | name, from the working copy parent or a specified commit, checkout                               |
-| Delete Branches             | local and remote branches, force                                                                 |
-| Merge                       | branch or commit, commit merged changes, include messages, no fast-forward, rebase               |
-| Stash                       | message, keep staged changes, include untracked files                                            |
-| Add Tag                     | name, commit, push, lightweight, message, move an existing tag                                   |
-| Checkout                    | branch at the commit or a detached HEAD; remote branch as a new tracking branch                  |
-| Rename / Delete Branch      | new name; force, also delete the upstream                                                        |
-| Remove / Push Tag           | from all remotes; to a chosen remote                                                             |
-| Reset                       | soft, mixed or hard                                                                              |
-| Rebase, Cherry-pick, Revert | confirmation; commit immediately, add "cherry picked from"                                       |
-| Apply / Pop / Delete Stash  | delete after applying, restore the staged state                                                  |
+| Action                      | Options                                                       |
+| --------------------------- | ------------------------------------------------------------- |
+| Commit                      | message, amend, push (off by default); commits staged files   |
+| Fetch                       | all remotes, prune, tags                                      |
+| Pull                        | remote and branch, commit merged, messages, no-ff, rebase     |
+| Push                        | remote, branches and upstreams, track new, all tags, force    |
+| New Branch                  | name, from parent or a commit, checkout                       |
+| Delete Branches             | local and remote, force                                       |
+| Merge                       | branch or commit, commit merged, messages, no-ff, rebase      |
+| Stash                       | message, keep staged, include untracked                       |
+| Add Tag                     | name, commit, push, lightweight, message, move existing       |
+| Checkout                    | branch or detached HEAD; remote branch as new tracking branch |
+| Rename / Delete Branch      | new name; force, delete upstream                              |
+| Remove / Push Tag           | from all remotes; to one remote                               |
+| Reset                       | soft, mixed, hard                                             |
+| Rebase, Cherry-pick, Revert | confirmation; commit immediately, add "cherry picked from"    |
+| Apply / Pop / Delete Stash  | delete after applying, restore staged state                   |
 
-Checking out a local branch needs no dialog. Errors from git show in the toolbar. With "commit merged changes" off, a merge or pull never fast-forwards either, so nothing moves until you commit. A force push uses `--force-with-lease --force-if-includes`: it is refused when the remote holds commits your branch never saw, even after gittt fetched them in the background. Branch and tag names are checked by git's own rules before anything runs. Pull, push and fetch never stop to ask for a password or passphrase: ssh runs in batch mode (use an agent or a credential helper), and a remote that does not answer is stopped after `limits.fetchTimeoutSeconds`.
+Local checkout needs no dialog; git errors show in the toolbar. With "commit merged" off, merge and pull never fast-forward. Force push uses `--force-with-lease --force-if-includes`, so remote commits you never saw block it even after a background fetch. Names are validated by git's rules first. Network actions never prompt: ssh runs in batch mode (use an agent or credential helper), and a silent remote is stopped after `limits.fetchTimeoutSeconds`.
 
 ## Keyboard
 
-| Key                             | Action                                                                                                    |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `Tab` `Shift+Tab`               | next / previous pane                                                                                      |
-| `↑` `↓` `PgUp` `PgDn`           | move                                                                                                      |
-| `Home` `End`                    | first / last commit                                                                                       |
-| `←` `→`                         | in the sidebar: collapse or go to the parent / expand or go to the first child; scroll sideways elsewhere |
-| `Shift+←` `Shift+→`             | scroll the sidebar sideways                                                                               |
-| `Enter`                         | open a repository or section, check out, open a file in the viewer                                        |
-| `Space`                         | fold / unfold in the sidebar, stage / unstage a pending file, context menu elsewhere                      |
-| `.`                             | context menu for the row                                                                                  |
-| `,`                             | Settings                                                                                                  |
-| `/`                             | filter the sidebar, or search commits in the log                                                          |
-| `y`                             | copy the selected commit's full hash                                                                      |
-| `c` `f` `p` `P` `b` `m` `s` `t` | Commit, Fetch, Pull, Push, Branch, Merge, Stash, Tag                                                      |
-| `R`                             | Refresh: reread every repository and fetch every remote                                                   |
-| `Esc`                           | close the file viewer, a dialog or a menu                                                                 |
-| `a` `x`                         | add a repository by path; remove the repository from the list                                             |
-| `K` `J`                         | move the selected repository up / down the list                                                           |
-| `r`                             | rescan: new repositories appear, removed ones come back                                                   |
-| `1` – `6`                       | branches, remote branches, order, view, dates, gitmoji                                                    |
-| `v`                             | file list: by path, by status, tree                                                                       |
-| `[` `]` `{` `}` `(` `)` `<` `>` | narrow / widen the graph, author, date and sidebar columns                                                |
-| `q` `Ctrl+C`                    | quit; while an action runs, `q` waits for it to finish and a second `q` quits at once                     |
+| Key                             | Action                                                              |
+| ------------------------------- | ------------------------------------------------------------------- |
+| `Tab` `Shift+Tab`               | next / previous pane                                                |
+| `↑` `↓` `PgUp` `PgDn`           | move                                                                |
+| `Home` `End`                    | first / last commit                                                 |
+| `←` `→`                         | sidebar: collapse or parent / expand or child; else scroll sideways |
+| `Shift+←` `Shift+→`             | scroll the sidebar sideways                                         |
+| `Enter`                         | open, check out, view file                                          |
+| `Space`                         | fold, stage / unstage, or context menu                              |
+| `.`                             | context menu                                                        |
+| `,`                             | Settings                                                            |
+| `/`                             | filter sidebar or search log                                        |
+| `y`                             | copy full hash                                                      |
+| `c` `f` `p` `P` `b` `m` `s` `t` | Commit, Fetch, Pull, Push, Branch, Merge, Stash, Tag                |
+| `R`                             | Refresh all, fetch all remotes                                      |
+| `Esc`                           | close viewer, dialog or menu                                        |
+| `a` `x`                         | add repository by path; remove from list                            |
+| `K` `J`                         | move repository up / down                                           |
+| `r`                             | rescan: new appear, removed return                                  |
+| `1` – `6`                       | branches, remotes, order, view, dates, gitmoji                      |
+| `v`                             | file list: path, status, tree                                       |
+| `[` `]` `{` `}` `(` `)` `<` `>` | narrow / widen graph, author, date, sidebar columns                 |
+| `q` `Ctrl+C`                    | quit; during an action `q` waits, a second `q` quits at once        |
 
 ## Mouse
 
-| Gesture                 | Action                                                                                 |
-| ----------------------- | -------------------------------------------------------------------------------------- |
-| click                   | select, press a button, toggle a filter or a dialog option                             |
-| double-click            | check out a branch, tag or commit; open a file in the viewer (at the line from a diff) |
-| right-click             | context menu                                                                           |
-| wheel                   | scroll the pane under the pointer; in a dialog, move between its controls              |
-| `Shift`+wheel, trackpad | scroll sideways                                                                        |
-| drag a divider          | resize the sidebar, the log and files, the files and diff, any column                  |
-| drag a repository row   | move the repository up or down the list                                                |
-| drag in the diff        | select text; it is copied to the clipboard on release (over ssh through the terminal)  |
-| click a checkbox        | stage or unstage a pending file; the header checkbox does all of them                  |
-| click a hash            | copy the full hash                                                                     |
-| `⌥` drag (iTerm2)       | the terminal's own selection anywhere                                                  |
+| Gesture                 | Action                                                        |
+| ----------------------- | ------------------------------------------------------------- |
+| click                   | select, press, toggle                                         |
+| double-click            | check out; open file in viewer (at the diff line)             |
+| right-click             | context menu                                                  |
+| wheel                   | scroll pane under pointer; in a dialog, move between controls |
+| `Shift`+wheel, trackpad | scroll sideways                                               |
+| drag a divider          | resize panes and columns                                      |
+| drag a repository row   | reorder                                                       |
+| drag in the diff        | select text, copied on release (over ssh via the terminal)    |
+| click a checkbox        | stage / unstage; header checkbox does all                     |
+| click a hash            | copy full hash                                                |
+| `⌥` drag (iTerm2)       | the terminal's own selection                                  |
 
 ## Configuration
 
-The **Settings** dialog (`,` or the toolbar) edits the everyday options: theme, icons, file view, branches, order, dates, remote branches, compact rows, gitmoji, how many commits to show, how deep to search, folders to skip, how often to fetch in the background, the diff limit, the double-click time and the recent-folder count. Changes apply at once; a new search depth or skip list searches the folder again. Its last box puts every setting back to its default, and its yellow button opens [Buy Me a Coffee](https://buymeacoffee.com/illinifellow).
+**Settings** (`,` or toolbar) covers theme, icons, views, filters, commit count, search depth and skips, fetch interval, diff limit, double-click time and recent-folder count. Changes apply at once; depth or skip changes rescan. The last box resets defaults; the yellow button opens [Buy Me a Coffee](https://buymeacoffee.com/illinifellow).
 
-All configuration lives in one file, `settings.json`, in two places of the same shape:
+Configuration is `settings.json` in two files of one shape:
 
-| File                                    | Holds                                                                                                     |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `config/settings.json` (in the package) | every default: settings, limits, columns, keys, themes, icon sets                                         |
-| `~/.config/gittt-cli/settings.json`     | only what you changed, plus what gittt remembers (`state`: recent folders, each folder's repository list) |
+| File                                    | Holds                                                         |
+| --------------------------------------- | ------------------------------------------------------------- |
+| `config/settings.json` (in the package) | every default: settings, limits, columns, keys, themes, icons |
+| `~/.config/gittt-cli/settings.json`     | your changes, plus `state` (recent folders, repository lists) |
 
-The two are merged on start. Toggles and drags in the app write the user file, changing only the values that changed and replacing the file in one step. It can also be edited by hand: comments and trailing commas are fine, and removing a value puts it back to its default. A value of the wrong type or range falls back to its default, and a file gittt cannot parse is never overwritten; either way the toolbar says what and where. `$XDG_CONFIG_HOME` moves the user file.
+They merge on start; the app writes only changed values, atomically. Hand edits may use comments and trailing commas; a removed value reverts to default. Invalid values fall back to defaults, an unparsable file is never overwritten, and the toolbar reports where. `$XDG_CONFIG_HOME` moves the user file.
 
-| Section    | What it holds                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `settings` | `theme`, `icons`, branches, remote branches, order, compact view, date format, gitmoji, file view, `maxCommits`, `scanDepth`, `scanExclude`, `fetchMinutes` (5 by default, 0 turns background fetch off)                                                                                                                                                                                                                                          |
-| `limits`   | diff size cap, tab width, highlighting batch, progress and cache sizes, commit details and diff caches, cursor settle time, refresh delay, polling interval for a repository whose watcher failed, summary reads and Refresh fetches at once, fetch time limit and backoff, folders searched at once, double-click time and distance, input split time, status message times, update check interval, recent-folder count, watched paths to ignore |
-| `columns`  | sidebar, graph, commit, author, date and files widths, lower panes' height (`null` sizes automatically)                                                                                                                                                                                                                                                                                                                                           |
-| `keys`     | the key for every action                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `themes`   | every theme: `colors`, `glyphs`, `spacing`, `syntax`; a theme of your own may name the theme it `extends`                                                                                                                                                                                                                                                                                                                                         |
-| `iconSets` | icon replacements, e.g. `nerd` for terminals with a Nerd Font; `settings.icons` names one, or `unicode` for the theme's own                                                                                                                                                                                                                                                                                                                       |
-| `tokens`   | single `colors`, `glyphs` or `spacing` values laid over the active theme                                                                                                                                                                                                                                                                                                                                                                          |
+| Section    | What it holds                                                                                                                                                                                                              |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings` | `theme`, `icons`, filters, view, dates, gitmoji, file view, `maxCommits`, `scanDepth`, `scanExclude`, `fetchMinutes` (default 5, 0 = off)                                                                                  |
+| `limits`   | diff cap, tab width, highlighting batch, cache sizes, timings (cursor settle, refresh, watcher polling, double-click, messages, update check), concurrency, fetch timeout and backoff, recent folders, ignored watch paths |
+| `columns`  | pane and column widths, lower pane height (`null` = automatic)                                                                                                                                                             |
+| `keys`     | the key for every action                                                                                                                                                                                                   |
+| `themes`   | `colors`, `glyphs`, `spacing`, `syntax` per theme; your own may `extends` another                                                                                                                                          |
+| `iconSets` | icon replacements, e.g. `nerd` for Nerd Fonts; `settings.icons` picks one, `unicode` keeps the theme's                                                                                                                     |
+| `tokens`   | single `colors`, `glyphs` or `spacing` values over the active theme                                                                                                                                                        |
 
 ### Themes
 
-Two themes ship: **golden-brown** (dark, warm orange on brown-tinted grounds) and **milk-and-honey** (light, warm milky grounds with an amber accent). `settings.theme` is `auto` by default: gittt asks the terminal for its background and picks milk-and-honey on a light one and golden-brown otherwise. golden-brown is drawn on the terminal's own background (its `background` is `transparent`); milk-and-honey paints its milky ground so it stays readable on any terminal. Each theme names its code highlighting in `syntax`: `vscode` for the editor's theme, or a bundled theme such as `light-plus`. A theme of your own is another entry under `themes`; anything it leaves out, nested glyphs included, comes from the theme named in its `extends` (golden-brown when it names none). Icon sets and `tokens` replace single values the same way.
+**golden-brown** is dark, warm orange on brown, drawn on the terminal's background (`transparent`). **milk-and-honey** is light, milky with amber, and paints its own ground. `settings.theme` defaults to `auto`, picking by the terminal's background. `syntax` is `vscode` or a bundled theme such as `light-plus`. A custom theme is another `themes` entry; what it omits, nested glyphs included, comes from its `extends` (golden-brown by default). Icon sets and `tokens` override single values the same way.
 
-- `colors`: background, text, muted text, borders, accent, selections, header and field grounds, branch, current branch, remote, tag, HEAD, stash, danger (errors, warnings, dangerous buttons), file states, diff grounds, label and pill colours, and `lanes` (the graph palette).
-- `glyphs`: every icon, mark and graph character (nodes, lines, corners, checkboxes, radio buttons, folders, file states).
-- `spacing`: sidebar indent, toolbar gaps, dialog, menu, folder picker and checklist name widths, checklist rows, search field width, the smallest sidebar and pane sizes, column limits and the resize step.
+- `colors`: grounds, text, borders, accent, selections, refs, HEAD, stash, danger, file states, diff, labels, `lanes` (graph palette).
+- `glyphs`: every icon, mark and graph character.
+- `spacing`: indents, gaps, widths of dialogs, menus and fields, minimum pane sizes, column limits, resize step.
 
 ## Development
 
@@ -179,11 +171,11 @@ npm run typecheck
 npm test            # graph, dialogs, settings, input and text layout, the store and the git layer against real repositories, the main screen
 ```
 
-In a checkout, a running `gittt` restarts itself in place (same process, same folder) when `dist/app.js` changes.
+In a checkout, `gittt` restarts in place when `dist/app.js` changes.
 
 ## Contributing
 
-Every change starts as an issue, a [bug report](https://github.com/illinifellow/gittt-cli/issues/new?template=bug_report.yml) or a [feature request](https://github.com/illinifellow/gittt-cli/issues/new?template=feature_request.yml). The work for an issue happens on its own branch and lands through a pull request that closes it; the branch is deleted on merge.
+Every change starts as a [bug report](https://github.com/illinifellow/gittt-cli/issues/new?template=bug_report.yml) or a [feature request](https://github.com/illinifellow/gittt-cli/issues/new?template=feature_request.yml), is worked on its own branch, and lands through a pull request that closes the issue; the branch is deleted on merge.
 
 ## License
 
