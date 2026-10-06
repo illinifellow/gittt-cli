@@ -2,7 +2,8 @@
  * The main screen: toolbar, repository tree on
  * the left, filter bar and commit log on the right, files and diff below, a
  * transient status at the right end of the toolbar. Every action opens a
- * dialog; the context menu ("." or a right click) lists the actions for the
+ * dialog, except Refresh, which fetches and rereads every repository at once
+ * and reports in the status; the context menu ("." or a right click) lists the actions for the
  * row; every element answers the mouse.
  */
 import { spawn } from "node:child_process"
@@ -30,7 +31,13 @@ import { resolveTheme } from "@/theme"
 import { availableUpdate, installUpdate } from "@/update"
 import { fit } from "./text"
 import { ThemeProvider } from "./theme"
-import { TreePane, flattenTree, sectionKey, type TreeEvents, type TreeNode } from "./tree"
+import { TreePane, flattenTree, moveInTree, sectionKey, type TreeEvents, type TreeNode } from "./tree"
+
+/**
+ * Log rows the cursor passes quicker than this are not read: holding an arrow key, paging or scrolling reads
+ * the commit details and diff only where the cursor stops; a single move reads at once.
+ */
+const SETTLE_MS = 90
 
 /** How often a running gittt asks GitHub for a newer release: every six hours. */
 const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000
@@ -127,7 +134,23 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     setRepositories([...store.repositories])
     setScanning(store.scanning)
   }), [store])
-  useEffect(() => void store.rescan(), [store])
+  useEffect(() => {
+    void store.rescan()
+    return () => store.close()
+  }, [store])
+  useEffect(() => store.configureFetch(config.settings.fetchMinutes), [store, config.settings.fetchMinutes])
+
+  /** Fetches every repository's remotes and reads every summary again, with the outcome in the status. */
+  const refreshAll = useCallback(() => {
+    if (busy) return
+    setBusy("refreshing")
+    setStatus(null)
+    void store.refreshAll().then(({ total, fetched, failed }) => {
+      setBusy(null)
+      const repositoriesText = `${total} repositor${total === 1 ? "y" : "ies"}`
+      setStatus({ text: `refreshed ${repositoriesText}, fetched ${fetched}${failed ? `, ${failed} could not be fetched` : ""}`, error: failed > 0 })
+    })
+  }, [store, busy])
 
   const repository = repositories.find(candidate => candidate.path === selectedPath) ?? null
   useEffect(() => {
@@ -140,11 +163,17 @@ export const App = ({ store }: { store: RepositoryStore }) => {
   const log = useMemo(() => repository ? buildLog(repository, commits) : { entries: [], rows: [] }, [repository, commits])
   const entry = log.entries[Math.min(logCursor, log.entries.length - 1)] ?? null
 
+  const logReading = useRef<AbortController | null>(null)
   const loadLog = useCallback(async (path: string) => {
-    const result = await readLog(path, settings, settings.maxCommits).catch(() => ({ commits: [], truncated: false }))
+    logReading.current?.abort()
+    const reading = new AbortController()
+    logReading.current = reading
+    const result = await readLog(path, settings, settings.maxCommits, reading.signal).catch(() => ({ commits: [], truncated: false }))
+    if (reading.signal.aborted) return
     setCommits(result.commits)
     setTruncated(result.truncated)
   }, [settings])
+  useEffect(() => () => logReading.current?.abort(), [])
 
   useEffect(() => {
     if (!repository) return
@@ -156,18 +185,27 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     void loadLog(repository.path)
   }, [repository, loadLog, settings.branches, settings.showRemoteBranches, settings.order])
 
-  const entryHash = entry?.hash ?? null
+  const entryKey = repository && entry ? `${repository.path}\0${entry.hash}` : ""
+  const [settledKey, setSettledKey] = useState("")
+  const lastCursorMove = useRef(0)
+  useEffect(() => {
+    const now = Date.now()
+    const quick = now - lastCursorMove.current < SETTLE_MS
+    lastCursorMove.current = now
+    if (!quick) return setSettledKey(entryKey)
+    const timer = setTimeout(() => setSettledKey(entryKey), SETTLE_MS)
+    return () => clearTimeout(timer)
+  }, [entryKey])
+  const entryHash = settledKey === entryKey && entry ? entry.hash : null
   const changes = repository?.changes ?? 0
   useEffect(() => {
     if (!repository || !entryHash) {
-      setDetails(null)
+      if (!entryKey) setDetails(null)
       return
     }
-    let current = true
-    void readDetails(repository.path, entryHash).then(result => current && setDetails(result), () => current && setDetails(null))
-    return () => {
-      current = false
-    }
+    const reading = new AbortController()
+    void readDetails(repository.path, entryHash, reading.signal).then(result => !reading.signal.aborted && setDetails(result), () => !reading.signal.aborted && setDetails(null))
+    return () => reading.abort()
   }, [repository?.path, entryHash, changes, repository?.staged, repository?.conflicts])
 
   const fileView = settings.fileView as FileView
@@ -183,8 +221,9 @@ export const App = ({ store }: { store: RepositoryStore }) => {
       return
     }
     let current = true
+    const reading = new AbortController()
     void (async () => {
-      const text = await readDiff(repository.path, details.hash, selectedFile, config.limits.diffKilobytes)
+      const text = await readDiff(repository.path, details.hash, selectedFile, config.limits.diffKilobytes, reading.signal)
       if (!current) return
       if (lastDiffText.current.key === `${theme.syntax}\0${selectedFile.path}\0${text}`) return
       lastDiffText.current = { key: `${theme.syntax}\0${selectedFile.path}\0${text}` }
@@ -195,6 +234,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     })().catch(() => current && setDiff(null))
     return () => {
       current = false
+      reading.abort()
     }
   }, [repository?.path, details, selectedFile?.path, theme.syntax])
 
@@ -478,6 +518,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     if (input === keys.quit || (key.ctrl && input === "c")) return exit()
     if (key.tab) return setFocus(PANES[(PANES.indexOf(focus) + (key.shift ? PANES.length - 1 : 1)) % PANES.length])
     if (input === keys.fetch) return openDialog("fetch")
+    if (input === keys.refresh) return refreshAll()
     if (input === keys.pull) return openDialog("pull")
     if (input === keys.push) return openDialog("push")
     if (input === keys.branch) return openDialog("branch", focus === "log" && entry && entry.hash !== WORKING_TREE ? { hash: entry.hash } : {})
@@ -514,8 +555,11 @@ export const App = ({ store }: { store: RepositoryStore }) => {
       if (step) return setTreeCursor(Math.max(0, Math.min(treeNodes.length - 1, treeCursor + step)))
       if (key.shift && (key.leftArrow || key.rightArrow)) return shiftPane("tree", key.leftArrow ? -1 : 1)
       if (input === keys.remove && node?.kind === "repository") return store.hide(node.path)
-      if (key.rightArrow) return toggleNode(node, true)
-      if (key.leftArrow) return toggleNode(node, false)
+      if (key.leftArrow || key.rightArrow) {
+        const moved = moveInTree(treeNodes, Math.min(treeCursor, treeNodes.length - 1), expanded, key.leftArrow ? "left" : "right")
+        if (moved.expanded !== expanded) setExpanded(moved.expanded)
+        return setTreeCursor(moved.cursor)
+      }
       if (input === " ") return toggleNode(node)
       if (key.return && node) {
         if (node.kind === "workspace") return openWorkspace(node)
@@ -589,6 +633,7 @@ export const App = ({ store }: { store: RepositoryStore }) => {
     { label: "Pull", key: config.keys.pull, count: current?.behind, run: () => openDialog("pull") },
     { label: "Push", key: config.keys.push, count: current?.ahead, run: () => openDialog("push") },
     { label: "Fetch", key: config.keys.fetch, run: () => openDialog("fetch") },
+    { label: "Refresh", key: config.keys.refresh, run: refreshAll },
     { label: "Branch", key: config.keys.branch, run: () => openDialog("branch") },
     { label: "Merge", key: config.keys.merge, run: () => openDialog("merge") },
     { label: "Stash", key: config.keys.stash, count: repository?.stashes.length, run: () => openDialog("stash") },

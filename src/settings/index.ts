@@ -36,6 +36,7 @@ export const settingsDialog = (config: Config): DialogSpec => {
     { type: "text", key: "maxCommits", label: "Commits shown", value: String(settings.maxCommits) },
     { type: "text", key: "scanDepth", label: "Search depth", value: String(settings.scanDepth) },
     { type: "text", key: "scanExclude", label: "Skip folders", value: settings.scanExclude.join(", ") },
+    { type: "text", key: "fetchMinutes", label: "Fetch every, min", value: String(settings.fetchMinutes) },
     { type: "text", key: "diffKilobytes", label: "Diff limit, KB", value: String(limits.diffKilobytes) },
     { type: "text", key: "doubleClickMs", label: "Double click, ms", value: String(limits.doubleClickMs) },
     { type: "text", key: "recentFolders", label: "Recent folders", value: String(limits.recentFolders) },
@@ -47,13 +48,15 @@ export const settingsDialog = (config: Config): DialogSpec => {
 /**
  * Checks the typed numbers.
  * @param values the dialog's values
- * @returns the first problem in words, or null when every number is a whole number of at least 1
+ * @returns the first problem in words, or null when every number is a whole number of at least 1 (background fetch minutes at least 0)
  */
 export const validateSettings = (values: DialogValues): string | null => {
   for (const key of NUMBER_FIELDS) {
     const value = Number(values[key])
     if (!Number.isInteger(value) || value < 1) return `${key} must be a whole number of at least 1`
   }
+  const fetchMinutes = Number(values.fetchMinutes)
+  if (!Number.isInteger(fetchMinutes) || fetchMinutes < 0) return "fetchMinutes must be a whole number, 0 to never fetch in the background"
   return null
 }
 
@@ -77,6 +80,7 @@ export const applySettings = (config: Config, values: DialogValues): Config => {
   next.settings.maxCommits = Number(values.maxCommits)
   next.settings.scanDepth = Number(values.scanDepth)
   next.settings.scanExclude = String(values.scanExclude).split(",").map(name => name.trim()).filter(Boolean)
+  next.settings.fetchMinutes = Number(values.fetchMinutes)
   next.limits.diffKilobytes = Number(values.diffKilobytes)
   next.limits.doubleClickMs = Number(values.doubleClickMs)
   next.limits.recentFolders = Number(values.recentFolders)

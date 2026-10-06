@@ -11,6 +11,7 @@
     "fileView": "path",
     "maxCommits": 2000,
     "scanDepth": 3,
+    "fetchMinutes": 5,
     "scanExclude": [
       "node_modules",
       "Library",
@@ -73,6 +74,7 @@
     "tag": "t",
     "settings": ",",
     "rescan": "r",
+    "refresh": "R",
     "add": "a",
     "remove": "x",
     "moveUp": "K",

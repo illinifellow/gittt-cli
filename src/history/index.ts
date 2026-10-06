@@ -39,12 +39,23 @@ export interface LogEntry extends Commit {
   badges: Badge[]
 }
 
+/** Badges by summary; a summary object never changes once read, and a new read is a new object. */
+const badgeCache = new WeakMap<Repository, Map<string, Badge[]>>()
+
 /**
- * Collects the badges of every commit a ref points at.
+ * Collects the badges of every commit a ref points at, once per summary object (every redraw asks again).
  * @param repository summary with branches, remotes and tags
- * @returns badges by commit hash; current branch first, then local, remote, tags
+ * @returns badges by commit hash; current branch first, then local, remote, tags; shared, never to be changed
  */
 export const collectBadges = (repository: Repository) => {
+  const cached = badgeCache.get(repository)
+  if (cached) return cached
+  const badges = readBadges(repository)
+  badgeCache.set(repository, badges)
+  return badges
+}
+
+const readBadges = (repository: Repository) => {
   const badges = new Map<string, Badge[]>()
   const add = (hash: string, badge: Badge) => badges.set(hash, [...(badges.get(hash) ?? []), badge])
   const synced = new Set<string>()

@@ -1,6 +1,6 @@
 {
   "name": "gittt-cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A git browser for the terminal: a catalogue of every repository under a folder, a commit graph, files and highlighted diffs, dialogs for every action and full mouse support.",
   "license": "MIT",
   "type": "module",

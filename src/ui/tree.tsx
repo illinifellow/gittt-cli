@@ -124,6 +124,35 @@ export const flattenTree = (repositories: Repository[], expanded: Set<string>, f
   return nodes
 }
 
+/**
+ * Left and Right in the sidebar, the same for every kind of row, as in a Finder list or an editor's file tree:
+ * Left collapses an expanded row and otherwise moves to the row's parent; Right expands a collapsed row and moves
+ * into an expanded one's first child; Right on a row without children does nothing.
+ * @param nodes rows from `flattenTree`
+ * @param cursor index of the highlighted row
+ * @param expanded expansion keys open now
+ * @param direction the arrow pressed
+ * @returns the new cursor and expansion keys; the same `expanded` set when nothing opens or closes
+ */
+export const moveInTree = (nodes: TreeNode[], cursor: number, expanded: Set<string>, direction: "left" | "right") => {
+  const node = nodes[cursor]
+  if (!node) return { cursor, expanded }
+  const toggled = (open: boolean) => {
+    const next = new Set(expanded)
+    if (open) next.add(node.toggle as string)
+    else next.delete(node.toggle as string)
+    return { cursor, expanded: next }
+  }
+  if (direction === "left") {
+    if (node.toggle && node.open && expanded.has(node.toggle)) return toggled(false)
+    for (let index = cursor - 1; index >= 0; index--) if (nodes[index].depth < node.depth) return { cursor: index, expanded }
+    return { cursor, expanded }
+  }
+  if (!node.toggle) return { cursor, expanded }
+  if (!node.open) return toggled(true)
+  return nodes[cursor + 1]?.depth > node.depth ? { cursor: cursor + 1, expanded } : { cursor, expanded }
+}
+
 /** What the sidebar reports to the screen. */
 export interface TreeEvents {
   onRow: (index: number, gesture: "click" | "double" | "right", event: MouseEvent) => void

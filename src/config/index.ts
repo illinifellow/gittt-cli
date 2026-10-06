@@ -24,7 +24,7 @@ export interface Catalog {
 /** Every action a key can trigger. */
 export type KeyBindings = Record<
   | "commit" | "pull" | "push" | "fetch" | "branch" | "merge" | "stash" | "tag" | "settings"
-  | "rescan" | "add" | "remove" | "moveUp" | "moveDown" | "menu" | "search" | "copyHash" | "fileView" | "quit"
+  | "rescan" | "refresh" | "add" | "remove" | "moveUp" | "moveDown" | "menu" | "search" | "copyHash" | "fileView" | "quit"
   | "branches" | "remotes" | "order" | "view" | "dates" | "gitmoji"
   | "graphNarrower" | "graphWider" | "authorNarrower" | "authorWider" | "dateNarrower" | "dateWider" | "sidebarNarrower" | "sidebarWider",
   string
@@ -55,6 +55,8 @@ export interface Config {
     maxCommits: number
     scanDepth: number
     scanExclude: string[]
+    /** Minutes between two background fetches of one repository's remotes; 0 never fetches in the background. */
+    fetchMinutes: number
   }
   limits: Limits
   /** Column widths in terminal cells and the lower panes' height in rows; `null` sizes automatically. */

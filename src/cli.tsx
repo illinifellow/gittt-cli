@@ -3,7 +3,8 @@
  * current directory or the path given as the first argument), remembers it
  * among recent folders, then opens the main screen in the
  * terminal's alternate screen with mouse reporting on. A new build of gittt
- * replaces the running one in place, keeping the chosen folder.
+ * replaces the running one in place, keeping the chosen folder. Leaving, by any
+ * route, stops the git processes still running.
  */
 import { spawn } from "node:child_process"
 import { realpathSync, unwatchFile, watchFile } from "node:fs"
@@ -12,6 +13,7 @@ import { fileURLToPath } from "node:url"
 import { render, useWindowSize } from "ink"
 import { useState } from "react"
 import { loadConfig, loadState, saveState } from "@/config"
+import { stopGit } from "@/git"
 import { mouse, startMouse } from "@/mouse"
 import { dispatchMouse } from "@/mouse/regions"
 import { RepositoryStore } from "@/store"
@@ -47,6 +49,8 @@ mouse.on("mouse", dispatchMouse)
 const resumedFolder = process.env.GITTT_FOLDER
 const instance = render(<Root initial={resumedFolder ?? resolve(process.argv[2] ?? process.cwd())} resumed={Boolean(resumedFolder)} />, { exitOnCtrlC: true, stdin: keyboard as unknown as NodeJS.ReadStream })
 let restarting = false
+process.on("exit", stopGit)
+for (const signal of ["SIGTERM", "SIGHUP"] as const) process.once(signal, () => instance.unmount())
 
 const bundle = realpathSync(fileURLToPath(import.meta.url))
 watchFile(bundle, { interval: 1000 }, (current, previous) => {
