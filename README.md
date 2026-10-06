@@ -1,6 +1,6 @@
 # gittt
 
-<!-- cover: docs/cover.png -->
+<!-- date: 2026-10-06T03:00:00Z -->
 
 **A git browser for the terminal.** Every repository under a folder in one sidebar, a commit graph, changed files and highlighted diffs, a dialog for every action, and full mouse support.
 
