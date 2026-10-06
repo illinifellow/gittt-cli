@@ -133,7 +133,7 @@ Local checkout needs no dialog; git errors show in the toolbar. With "commit mer
 
 ## Configuration
 
-**Settings** (`,` or toolbar) covers theme, icons, views, filters, commit count, search depth and skips, fetch interval, diff limit, double-click time and recent-folder count. Changes apply at once; depth or skip changes rescan. The last box resets defaults; the yellow button opens [Buy Me a Coffee](https://buymeacoffee.com/illinifellow).
+**Settings** (`,` or toolbar) covers theme, icons, views, filters, commit count, search depth and skips, fetch interval, diff limit, double-click time and recent-folder count. Changes apply at once; depth or skip changes rescan.
 
 Configuration is `settings.json` in two files of one shape:
 
