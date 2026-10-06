@@ -1,5 +1,7 @@
 # gittt
 
+<!-- cover: docs/cover.png -->
+
 **A git browser for the terminal.** Every repository under a folder in one sidebar, a commit graph, changed files and highlighted diffs, a dialog for every action, and full mouse support.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/illinifellow/gittt-cli/ci.yml?label=CI)](https://github.com/illinifellow/gittt-cli/actions/workflows/ci.yml)
@@ -180,5 +182,3 @@ Every change starts as an issue, a [bug report](https://github.com/illinifellow/
 ## License
 
 [MIT](LICENSE)
-
-<img data-cover alt="gittt as an isometric line drawing: a terminal and keyboard, the commit graph on the screen with one branch drawn heavier" src="docs/cover.png" />
