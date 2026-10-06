@@ -23,7 +23,7 @@ const GITMOJI: Record<string, string> = {
   pushpin: "📌", recycle: "♻️", rewind: "⏪", robot: "🤖", rocket: "🚀", rotating_light: "🚨", safety_vest: "🦺", see_no_evil: "🙈",
   seedling: "🌱", sparkles: "✨", speech_balloon: "💬", stethoscope: "🩺", tada: "🎉", technologist: "🧑‍💻", test_tube: "🧪", thread: "🧵",
   triangular_flag_on_post: "🚩", truck: "🚚", twisted_rightwards_arrows: "🔀", wastebasket: "🗑️", wheelchair: "♿", whale: "🐳",
-  white_check_mark: "✅", wrench: "🔧", x: "❌", zap: "⚡", warning: "⚠️", rewind_arrow: "⏪",
+  white_check_mark: "✅", wrench: "🔧", x: "❌", zap: "⚡",
 }
 
 const PATTERN = /(`[^`]+`)|(:[a-z0-9_+-]+:)|(\bhttps?:\/\/[^\s<]+)|(^(?:feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(?:\([^)]*\))?!?:)|('[^'\s][^']*')|(\b[A-Z][A-Z0-9]+-\d+\b)|(\b[0-9a-f]{7,40}\b)/g

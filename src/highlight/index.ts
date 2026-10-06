@@ -2,7 +2,8 @@
  * Syntax highlighting of diff hunks for the terminal: shiki tokens in the
  * editor's theme, the old and new sides highlighted as separate blocks so each
  * keeps a correct grammar state, mapped back onto the hunk's lines. Large diffs
- * are highlighted in pieces that yield to input, and results are cached.
+ * are highlighted in pieces that yield to input and stop as soon as the screen
+ * no longer needs them, and results are cached.
  */
 import { createHash } from "node:crypto"
 import { createHighlighterCore, type GrammarState, type ThemeRegistrationAny } from "shiki/core"
@@ -43,25 +44,22 @@ const languageOf = (path: string) => {
   return mapped ? aliases.get(mapped) ?? null : null
 }
 
-/** How often a highlighting in progress reports what it has so far; each report redraws the whole diff. */
-const PROGRESS_INTERVAL_MS = 120
+/** The limits a highlighting obeys, read from the configuration at each call. */
+export type HighlightLimits = Pick<Limits, "highlightMaxLines" | "highlightChunkLines" | "highlightCacheSize" | "highlightCacheLines" | "highlightProgressMs">
 
 /** Highlights hunks with one theme. */
 export class DiffHighlighter {
   private highlighter: ReturnType<typeof createHighlighterCore> | null = null
 
-  /**
-   * @param theme a VS Code theme JSON
-   * @param limits `highlightMaxLines` (longer diffs stay plain), `highlightChunkLines` (lines per piece), `highlightCacheSize` (diffs remembered, also at most `highlightMaxLines` lines in all)
-   */
-  constructor(private readonly theme: Promise<ThemeRegistrationAny>, private readonly limits: Pick<Limits, "highlightMaxLines" | "highlightChunkLines" | "highlightCacheSize">) {}
+  /** @param theme a VS Code theme JSON */
+  constructor(private readonly theme: Promise<ThemeRegistrationAny>) {}
 
   private async core() {
     this.highlighter ??= this.theme.then(theme => createHighlighterCore({ themes: [{ ...theme, name: THEME_NAME }], langs: [], engine: createJavaScriptRegexEngine({ forgiving: true }) }))
     return this.highlighter
   }
 
-  /** Highlighted diffs by path and text digest, with their line counts; bounded by entries and by `highlightMaxLines` lines in all. */
+  /** Highlighted diffs by path and text digest, with their line counts; bounded by `highlightCacheSize` entries and `highlightCacheLines` lines in all. */
   private cache = new Map<string, { result: Segment[][][]; lines: number }>()
   private cachedLines = 0
 
@@ -74,11 +72,11 @@ export class DiffHighlighter {
     }))
   }
 
-  private remember(key: string, result: Segment[][][], lines: number) {
+  private remember(key: string, result: Segment[][][], lines: number, limits: HighlightLimits) {
     this.cache.set(key, { result, lines })
     this.cachedLines += lines
     for (const [oldest, entry] of this.cache) {
-      if (this.cache.size <= 1 || (this.cache.size <= this.limits.highlightCacheSize && this.cachedLines <= this.limits.highlightMaxLines)) break
+      if (this.cache.size <= 1 || (this.cache.size <= limits.highlightCacheSize && this.cachedLines <= limits.highlightCacheLines)) break
       this.cache.delete(oldest)
       this.cachedLines -= entry.lines
     }
@@ -87,14 +85,18 @@ export class DiffHighlighter {
   /**
    * Highlights the code of every hunk, a few hundred lines at a time, yielding to keyboard and mouse input between pieces.
    * Results are cached per file and diff text, so an unchanged diff is never highlighted twice; progress is reported
-   * after the first piece and then at most every 120 ms.
+   * after the first piece and then at most every `highlightProgressMs`.
    * @param path file path, for the language
    * @param text the diff text, part of the cache key
    * @param diff parsed diff of that file
-   * @param onProgress receives the highlighting so far after every piece (lines not reached yet are plain)
-   * @returns per hunk, per line, the coloured code without its prefix; `null` for unknown languages and very long diffs
+   * @param limits `highlightMaxLines` (longer diffs stay plain), `highlightChunkLines` (lines per piece), the cache
+   *   bounds and the progress interval
+   * @param options.signal aborting stops the work between two pieces; nothing is cached then
+   * @param options.onProgress receives the highlighting so far after every piece (lines not reached yet are plain)
+   * @returns per hunk, per line, the coloured code without its prefix; `null` for unknown languages, very long diffs
+   *   and an aborted highlighting
    */
-  async highlight(path: string, text: string, diff: ParsedDiff, onProgress?: (partial: Segment[][][]) => void): Promise<Segment[][][] | null> {
+  async highlight(path: string, text: string, diff: ParsedDiff, limits: HighlightLimits, { signal, onProgress }: { signal?: AbortSignal; onProgress?: (partial: Segment[][][]) => void } = {}): Promise<Segment[][][] | null> {
     const key = `${path}\0${createHash("sha1").update(text).digest("base64")}`
     const cached = this.cache.get(key)
     if (cached) {
@@ -105,7 +107,7 @@ export class DiffHighlighter {
     const language = languageOf(path)
     if (!language || !(language in bundledLanguages)) return null
     const lineCount = diff.hunks.reduce((total, hunk) => total + hunk.lines.length, 0)
-    if (!lineCount || lineCount > this.limits.highlightMaxLines) return null
+    if (!lineCount || lineCount > limits.highlightMaxLines) return null
     const highlighter = await this.core()
     if (!highlighter.getLoadedLanguages().includes(language)) await highlighter.loadLanguage(bundledLanguages[language as keyof typeof bundledLanguages])
     const width = prefixWidth(diff)
@@ -127,19 +129,21 @@ export class DiffHighlighter {
     for (const entry of hunks)
       for (const side of ["new", "old"] as const) {
         let state: GrammarState | undefined
-        for (let start = 0; start < entry.sides[side].length; start += this.limits.highlightChunkLines) {
-          const tokens = highlighter.codeToTokensBase(entry.sides[side].slice(start, start + this.limits.highlightChunkLines).join("\n"), { lang: language, theme: THEME_NAME, grammarState: state })
+        for (let start = 0; start < entry.sides[side].length; start += limits.highlightChunkLines) {
+          if (signal?.aborted) return null
+          const tokens = highlighter.codeToTokensBase(entry.sides[side].slice(start, start + limits.highlightChunkLines).join("\n"), { lang: language, theme: THEME_NAME, grammarState: state })
           state = highlighter.getLastGrammarState(tokens)
           entry.tokens[side].push(...this.toSegments(tokens))
-          if (onProgress && Date.now() - reportedAt >= PROGRESS_INTERVAL_MS) {
+          if (onProgress && Date.now() - reportedAt >= limits.highlightProgressMs) {
             onProgress(assemble())
             reportedAt = Date.now()
           }
           await new Promise(resolve => setImmediate(resolve))
         }
       }
+    if (signal?.aborted) return null
     const result = assemble()
-    this.remember(key, result, lineCount)
+    this.remember(key, result, lineCount, limits)
     return result
   }
 }

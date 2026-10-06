@@ -75,7 +75,7 @@ export const flattenTree = (repositories: Repository[], expanded: Set<string>, f
   for (const repository of repositories) {
     const { path } = repository
     const branches = repository.branches.filter(branch => matches(branch.name, filter))
-    const remotes = repository.remotes.map(remote => ({ ...remote, branches: remote.branches.filter(branch => matches(`${remote.name}/${branch.name}`, filter)) })).filter(remote => remote.branches.length)
+    const remotes = repository.remotes.map(remote => ({ ...remote, branches: remote.branches.filter(branch => matches(`${remote.name}/${branch.name}`, filter)) })).filter(remote => !filter || remote.branches.length)
     const tags = repository.tags.filter(tag => matches(tag.name, filter))
     const stashes = repository.stashes.filter(stash => matches(stash.message, filter))
     const nameMatches = matches(repository.name, filter)
@@ -86,7 +86,7 @@ export const flattenTree = (repositories: Repository[], expanded: Set<string>, f
     nodes.push({ key: path, kind: "repository", depth: 0, label: repository.name, path, toggle: path, open: isOpen(path), meta: [
       ...(repository.changes ? [{ text: String(repository.changes), color: palette.modified, pill: true }] : []),
       ...(current?.ahead ? [{ text: `${current.ahead}${glyphs.ahead}`, color: palette.added, pill: true }] : []),
-      ...(current?.behind ? [{ text: `${current.behind}${glyphs.behind}`, color: palette.stash, pill: true }] : []),
+      ...(current?.behind ? [{ text: `${current.behind}${glyphs.behind}`, color: palette.danger, pill: true }] : []),
       { text: `${glyphs.branch} ${repository.head.branch ?? repository.head.hash?.slice(0, 7) ?? "empty"}`, color: palette.head },
     ] })
     if (!isOpen(path)) continue
@@ -104,9 +104,9 @@ export const flattenTree = (repositories: Repository[], expanded: Set<string>, f
     if (section("branches", "BRANCHES", branches.length))
       for (const branch of branches)
         nodes.push({ key: `${path}#b:${branch.name}`, kind: "branch", depth: 2, label: branch.name, path, ref: branch.name, hash: branch.hash, current: branch.current, meta: [
-          ...(branch.gone ? [{ text: "gone", color: palette.stash }] : []),
+          ...(branch.gone ? [{ text: "gone", color: palette.danger }] : []),
           ...(branch.ahead ? [{ text: `${branch.ahead}${glyphs.ahead}`, color: palette.added, pill: true }] : []),
-          ...(branch.behind ? [{ text: `${branch.behind}${glyphs.behind}`, color: palette.stash, pill: true }] : []),
+          ...(branch.behind ? [{ text: `${branch.behind}${glyphs.behind}`, color: palette.danger, pill: true }] : []),
         ] })
     if (section("remotes", "REMOTES", remotes.length))
       for (const remote of remotes) {
@@ -233,7 +233,7 @@ export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, 
               <Text backgroundColor={background} wrap="truncate-end">
                 {bullet ? <Text color={palette.accent}>{bullet}</Text> : null}
                 {glyph ? <Text color={node.kind === "repository" ? palette.accent : palette.textMuted}>{glyph} </Text> : null}
-                <Text color={node.kind === "section" ? palette.textMuted : node.kind === "error" ? palette.stash : selectedRepository && !atCursor ? palette.accent : palette.text} bold={node.kind === "repository" || node.current}>{fit(slide(node.label, scrollX), labelWidth)}</Text>
+                <Text color={node.kind === "section" ? palette.textMuted : node.kind === "error" ? palette.danger : selectedRepository && !atCursor ? palette.accent : palette.text} bold={node.kind === "repository" || node.current}>{fit(slide(node.label, scrollX), labelWidth)}</Text>
                 {meta.map((part, partIndex) => (
                   <Text key={partIndex}>
                     <Text> </Text>

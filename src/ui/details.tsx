@@ -2,11 +2,13 @@
  * The lower half, read-only: the selected row's
  * files (sorted by path, by status, or as a tree) on the left; on the right the
  * commit header (or the stopped operation) and the selected file's diff, hunk
- * by hunk, with old and new line numbers and syntax colours.
+ * by hunk, with old and new line numbers and syntax colours. Code is laid out
+ * on terminal cells with tabs expanded, and a selection is kept in cells, so
+ * wide characters, emoji and tabs select and copy what is drawn.
  */
 import { Box, Text } from "ink"
 import { prefixWidth, type ParsedDiff } from "@/diff"
-import { FILE_STATUSES, fileRows, rowFiles, type FileRow, type FileView } from "@/files"
+import { FILE_TONES, fileRows, rowFiles, type FileRow, type FileView } from "@/files"
 import type { Badge } from "@/history"
 import type { Segment } from "@/highlight"
 import { splitMessage } from "@/message"
@@ -16,7 +18,7 @@ import { badgeColor, badgeGlyph, partColor } from "./log"
 import type { MouseEvent } from "@/mouse"
 import { Clickable, type LocalMouseEvent } from "@/mouse/regions"
 import type { Theme } from "@/theme"
-import { fit, mix, slide, widthOf } from "./text"
+import { fit, mix, placeText, slide, splitCells, widthOf } from "./text"
 import { useTheme } from "./theme"
 import { CHECKBOX_WIDTH, CheckBox, type CheckState } from "./checkbox"
 import { windowStart } from "./window"
@@ -34,16 +36,23 @@ interface DiffLine {
 }
 
 /**
+ * @param text a file's text
+ * @returns its lines, without the empty one after a final newline
+ */
+export const sourceLines = (text: string) => (text.endsWith("\n") ? text.slice(0, -1) : text).split("\n")
+
+/**
  * Builds the lines of a whole file shown in the diff pane.
  * @param path file path, for the title
  * @param text the file's text
+ * @param cutAt the size in kilobytes the text was cut at, or `null` when it is whole
  * @param highlights its highlighted lines, or `null` while they are not ready
  * @param theme colours and glyphs
- * @returns a title line and one numbered line per line of the file
+ * @returns a title line, one numbered line per line of the file, and a closing note when the file was cut
  */
-export const fileViewLines = (path: string, text: string, highlights: Segment[][] | null, theme: Theme): DiffLine[] => {
+export const fileViewLines = (path: string, text: string, cutAt: number | null, highlights: Segment[][] | null, theme: Theme): DiffLine[] => {
   const { colors: palette, glyphs } = theme
-  const source = text.endsWith("\n") ? text.slice(0, -1).split("\n") : text.split("\n")
+  const source = sourceLines(text)
   return [
     { segments: [{ text: ` ${glyphs.file} ${path}`, bold: true, color: palette.text }, { text: `  whole file, esc returns to the diff`, color: palette.textMuted }], background: palette.header, line: 1 },
     ...source.map((code, index) => ({
@@ -51,6 +60,7 @@ export const fileViewLines = (path: string, text: string, highlights: Segment[][
       line: index + 1,
       segments: [{ text: `${String(index + 1).padStart(6)} `, color: palette.textMuted }, { text: " " }, ...(highlights?.[index] ?? [{ text: code }])],
     })),
+    ...(cutAt === null ? [] : [{ segments: [{ text: `   file cut at ${cutAt} KB`, color: palette.textMuted, italic: true }] }]),
   ]
 }
 
@@ -77,7 +87,7 @@ export const diffLines = (details: CommitDetails | null, badges: Badge[], operat
   const lines: DiffLine[] = []
   const field = (label: string, segments: Segment[]) => lines.push({ segments: [{ text: `${label.padStart(10)}: `, color: palette.textMuted }, ...segments] })
   if (details.hash === WORKING_TREE) {
-    if (operation) lines.push({ segments: [{ text: ` ${glyphs.alert} ${operation}`, color: palette.stash, bold: true }] }, { segments: [] })
+    if (operation) lines.push({ segments: [{ text: ` ${glyphs.alert} ${operation}`, color: palette.danger, bold: true }] }, { segments: [] })
   } else {
     field("Commit", [{ text: details.hash }, { text: ` [${details.hash.slice(0, 7)}]`, color: palette.textMuted }])
     lines[lines.length - 1].copy = details.hash
@@ -117,7 +127,7 @@ export const diffLines = (details: CommitDetails | null, badges: Badge[], operat
         segments: [
           { text: `${left.padStart(5)} ${right.padStart(5)} `, color: palette.textMuted },
           { text: marks, color: kind === "add" ? palette.added : kind === "remove" || kind === "conflict" ? palette.deleted : palette.textMuted, bold: kind === "conflict" },
-          ...(kind === "note" ? [{ text: text, color: palette.textMuted, italic: true }] : code && kind !== "conflict" ? code : [{ text: text.slice(prefix), color: kind === "conflict" ? palette.stash : palette.text, bold: kind === "conflict" }]),
+          ...(kind === "note" ? [{ text: text, color: palette.textMuted, italic: true }] : code && kind !== "conflict" ? code : [{ text: text.slice(prefix), color: kind === "conflict" ? palette.danger : palette.text, bold: kind === "conflict" }]),
         ],
       })
     })
@@ -197,18 +207,17 @@ export const FilesPane = ({ rows, cursor, width, height, focused, view, working,
               <Text backgroundColor={background} color={palette.textMuted} wrap="truncate-end">{fit(slide(`${indent}${glyphs.folder} ${row.name}/`, scrollX), width - boxCells)}</Text>
             </Clickable>
           )
-        const status = FILE_STATUSES[row.file.status] ?? FILE_STATUSES.M
-        const tone = palette[status.tone]
-        const name = slide(`${row.folder}${row.name}`, scrollX)
-        const folderShown = Math.max(0, widthOf(row.folder) - scrollX)
+        const toneName = FILE_TONES[row.file.status] ?? FILE_TONES.M
+        const tone = palette[toneName]
+        const [folderPart, namePart] = splitCells(slide(`${row.folder}${row.name}`, scrollX), Math.max(0, widthOf(row.folder) - scrollX))
         return (
           <Clickable key={row.file.path} height={1} width={width} onClick={event => events.onFile(index, "click", event)} onDoubleClick={event => events.onFile(index, "double", event)}>
             {working ? <Clickable flexShrink={0} onClick={() => events.onStage(index)}><Text backgroundColor={background}> </Text><CheckBox state={box(row.file)} /><Text backgroundColor={background}> </Text></Clickable> : null}
             <Text backgroundColor={background} wrap="truncate-end">
               <Text>{indent}</Text>
-              <Text color={tone} bold>{glyphs.status[status.tone]} </Text>
-              <Text color={palette.textMuted}>{[...name].slice(0, folderShown).join("")}</Text>
-              <Text color={palette.text}>{fit([...name].slice(folderShown).join(""), Math.max(1, width - indent.length - 2 - folderShown - boxCells))}</Text>
+              <Text color={tone} bold>{glyphs.status[toneName]} </Text>
+              <Text color={palette.textMuted}>{folderPart}</Text>
+              <Text color={palette.text}>{fit(namePart, Math.max(1, width - indent.length - 2 - widthOf(folderPart) - boxCells))}</Text>
             </Text>
           </Clickable>
         )
@@ -217,7 +226,7 @@ export const FilesPane = ({ rows, cursor, width, height, focused, view, working,
   )
 }
 
-/** A text selection in the diff pane: line indexes into the pane's lines, character columns into their text. */
+/** A text selection in the diff pane: line indexes into the pane's lines, cell columns into their code. */
 export interface DiffSelection {
   anchor: { line: number; column: number }
   focus: { line: number; column: number }
@@ -242,16 +251,25 @@ export const lineText = (line: DiffLine) => (line.gutter ? line.segments.slice(2
 export const gutterWidth = (line: DiffLine) => line.gutter ? widthOf(line.segments.slice(0, 2).map(segment => segment.text).join("")) : 0
 
 /**
- * @param lines the pane's lines
- * @param selection the selection
- * @returns the selected text, lines joined with newlines
+ * @param line a line of the diff pane
+ * @param tabWidth cells between tab stops
+ * @returns how many cells its selectable text takes
  */
-export const selectedText = (lines: DiffLine[], selection: DiffSelection) => {
+export const lineCells = (line: DiffLine, tabWidth: number) => placeText(lineText(line), tabWidth).reduce((total, piece) => total + piece.width, 0)
+
+/**
+ * @param lines the pane's lines
+ * @param selection the selection, in cells
+ * @param tabWidth cells between tab stops
+ * @returns the selected text as written in the source (tabs stay tabs), lines joined with newlines
+ */
+export const selectedText = (lines: DiffLine[], selection: DiffSelection, tabWidth: number) => {
   const [start, end] = ordered(selection)
   return lines.slice(start.line, end.line + 1).map((line, offset) => {
     const index = start.line + offset
-    const text = [...lineText(line)]
-    return text.slice(index === start.line ? start.column : 0, index === end.line ? end.column + 1 : text.length).join("")
+    const from = index === start.line ? start.column : 0
+    const to = index === end.line ? end.column : Infinity
+    return placeText(lineText(line), tabWidth).filter(piece => piece.start <= to && piece.start + piece.width - 1 >= from).map(piece => piece.source).join("")
   }).join("\n")
 }
 
@@ -259,15 +277,16 @@ export const selectedText = (lines: DiffLine[], selection: DiffSelection) => {
  * Draws the visible part of the diff pane; line numbers stay put while the code scrolls sideways, and a dragged selection is highlighted character by character.
  * @param props.lines every line of the pane from `diffLines`
  * @param props.scroll index of the first visible line
- * @param props.scrollX characters scrolled sideways
+ * @param props.scrollX cells scrolled sideways
  * @param props.cursorLine line with the keyboard cursor
  * @param props.selection the current text selection, or `null`
  * @param props.width pane width in cells
  * @param props.height pane height in rows
  * @param props.focused whether the pane has the keyboard (the cursor line is drawn only then)
+ * @param props.tabWidth cells between tab stops
  * @param props.events clicks, double clicks, wheel and the selection drag
  */
-export const DiffPane = ({ lines, scroll, scrollX, cursorLine, selection, width, height, focused, events }: {
+export const DiffPane = ({ lines, scroll, scrollX, cursorLine, selection, width, height, focused, tabWidth, events }: {
   lines: DiffLine[]
   scroll: number
   scrollX: number
@@ -276,6 +295,7 @@ export const DiffPane = ({ lines, scroll, scrollX, cursorLine, selection, width,
   width: number
   height: number
   focused: boolean
+  tabWidth: number
   events: DetailsEvents
 }) => {
   const { colors: palette } = useTheme()
@@ -291,21 +311,19 @@ export const DiffPane = ({ lines, scroll, scrollX, cursorLine, selection, width,
         const selectedTo = range && index >= range[0].line && index <= range[1].line ? (index === range[1].line ? range[1].column : Infinity) : -1
         const runs: { text: string; segment: Segment; selected: boolean }[] = []
         let used = pinned.reduce((total, segment) => total + widthOf(segment.text), 0)
-        let position = 0
+        let column = 0
         walk: for (const segment of body) {
-          if (position + segment.text.length <= scrollX) {
-            position += segment.text.length
-            continue
-          }
-          for (const character of segment.text) {
-            if (position++ < scrollX) continue
-            const size = widthOf(character)
+          for (const piece of placeText(segment.text, tabWidth, column)) {
+            column = piece.start + piece.width
+            if (column <= scrollX) continue
+            const shown = piece.start < scrollX ? " ".repeat(column - scrollX) : piece.drawn
+            const size = Math.min(piece.width, column - scrollX)
             if (used + size > width) break walk
             used += size
-            const selected = position - 1 >= selectedFrom && position - 1 <= selectedTo
+            const selected = piece.start <= selectedTo && column - 1 >= selectedFrom
             const last = runs[runs.length - 1]
-            if (last && last.segment === segment && last.selected === selected) last.text += character
-            else runs.push({ text: character, segment, selected })
+            if (last && last.segment === segment && last.selected === selected) last.text += shown
+            else runs.push({ text: shown, segment, selected })
           }
         }
         return (

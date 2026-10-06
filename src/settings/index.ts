@@ -4,7 +4,7 @@
  * Coffee link. Submitting writes the changes through `saveConfig`.
  */
 import { spawn } from "node:child_process"
-import type { Config } from "@/config"
+import { AUTO_THEME, THEME_ICONS, checkConfig, type Config } from "@/config"
 import type { DialogSpec, DialogValues } from "@/dialogs"
 
 /** Where the Buy Me a Coffee button leads: the same page illinifellow.com links to. */
@@ -13,8 +13,6 @@ export const COFFEE_URL = "https://buymeacoffee.com/illinifellow"
 /** Buy Me a Coffee's own button colours, kept as the brand draws them in every theme. */
 const COFFEE_BUTTON = { background: "#ffdd04", color: "#000000" }
 
-const NUMBER_FIELDS = ["maxCommits", "scanDepth", "diffKilobytes", "doubleClickMs", "recentFolders"] as const
-
 /**
  * Builds the settings dialog from the current configuration.
  * @param config the configuration in effect
@@ -22,10 +20,11 @@ const NUMBER_FIELDS = ["maxCommits", "scanDepth", "diffKilobytes", "doubleClickM
  */
 export const settingsDialog = (config: Config): DialogSpec => {
   const { settings, limits } = config
-  const themes = ["auto", ...Object.keys(config.themes)]
+  const themes = [AUTO_THEME, ...Object.keys(config.themes)]
+  const icons = [THEME_ICONS, ...Object.keys(config.iconSets)]
   return { kind: "settings", title: "Settings", submit: "Save", fields: [
     { type: "select", key: "theme", label: "Theme", value: settings.theme, choices: themes.map(name => ({ value: name, label: name })) },
-    { type: "select", key: "icons", label: "Icons", value: settings.icons, choices: [{ value: "unicode", label: "unicode" }, { value: "nerd", label: "nerd font" }] },
+    { type: "select", key: "icons", label: "Icons", value: settings.icons, choices: icons.map(name => ({ value: name, label: name })) },
     { type: "select", key: "fileView", label: "Files", value: settings.fileView, choices: [{ value: "path", label: "sorted by path" }, { value: "status", label: "sorted by status" }, { value: "tree", label: "tree" }] },
     { type: "select", key: "branches", label: "Branches", value: settings.branches, choices: [{ value: "all", label: "all branches" }, { value: "current", label: "current branch" }] },
     { type: "select", key: "order", label: "Order", value: settings.order, choices: [{ value: "ancestor", label: "ancestor order" }, { value: "date", label: "date order" }] },
@@ -46,19 +45,16 @@ export const settingsDialog = (config: Config): DialogSpec => {
 }
 
 /**
- * Checks the typed numbers.
+ * Checks the dialog's values by the same rules the settings file is checked by on load.
+ * @param config the configuration the dialog was opened on
  * @param values the dialog's values
- * @returns the first problem in words, or null when every number is a whole number of at least 1 (background fetch minutes at least 0)
+ * @returns the first problem in words, naming the setting (e.g. `settings.maxCommits must be a whole number of at
+ *   least 1, found "many"`), or null when every value is usable
  */
-export const validateSettings = (values: DialogValues): string | null => {
-  for (const key of NUMBER_FIELDS) {
-    const value = Number(values[key])
-    if (!Number.isInteger(value) || value < 1) return `${key} must be a whole number of at least 1`
-  }
-  const fetchMinutes = Number(values.fetchMinutes)
-  if (!Number.isInteger(fetchMinutes) || fetchMinutes < 0) return "fetchMinutes must be a whole number, 0 to never fetch in the background"
-  return null
-}
+export const validateSettings = (config: Config, values: DialogValues): string | null => checkConfig(applySettings(config, values)).problems[0] ?? null
+
+/** @returns a typed number; blank text is no number (`Number("")` would read it as 0) */
+const toNumber = (value: DialogValues[string]) => String(value).trim() ? Number(value) : Number.NaN
 
 /**
  * Writes the dialog's values into a copy of the configuration.
@@ -77,13 +73,13 @@ export const applySettings = (config: Config, values: DialogValues): Config => {
   next.settings.showRemoteBranches = values.showRemoteBranches === true
   next.settings.compact = values.compact === true
   next.settings.gitmoji = values.gitmoji === true
-  next.settings.maxCommits = Number(values.maxCommits)
-  next.settings.scanDepth = Number(values.scanDepth)
+  next.settings.maxCommits = toNumber(values.maxCommits)
+  next.settings.scanDepth = toNumber(values.scanDepth)
   next.settings.scanExclude = String(values.scanExclude).split(",").map(name => name.trim()).filter(Boolean)
-  next.settings.fetchMinutes = Number(values.fetchMinutes)
-  next.limits.diffKilobytes = Number(values.diffKilobytes)
-  next.limits.doubleClickMs = Number(values.doubleClickMs)
-  next.limits.recentFolders = Number(values.recentFolders)
+  next.settings.fetchMinutes = toNumber(values.fetchMinutes)
+  next.limits.diffKilobytes = toNumber(values.diffKilobytes)
+  next.limits.doubleClickMs = toNumber(values.doubleClickMs)
+  next.limits.recentFolders = toNumber(values.recentFolders)
   return next
 }
 

@@ -7,7 +7,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/illinifellow/gittt-cli/ci.yml?label=CI)](https://github.com/illinifellow/gittt-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-ff905c)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20-88bd66)](https://nodejs.org)
+[![Node](https://img.shields.io/badge/node-%3E%3D22.15-88bd66)](https://nodejs.org)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-ffdd04?logo=buymeacoffee&logoColor=000)](https://buymeacoffee.com/illinifellow)
 
 ![gittt in the light milk-and-honey theme: four repositories in the sidebar, the commit graph of ferrule with its feature branches, tags and merges, and the pending Rust change highlighted in the diff](docs/light.png)
@@ -22,13 +22,13 @@ So the aim was that desktop layout inside the terminal, in a window as narrow as
 
 ## How it's built
 
-TypeScript on Node 20, talking to `git` directly and drawing to the terminal with true colour and SGR mouse reporting. A file watcher refreshes the screen within a second of any change while reading each repository with one git process at a time, remotes are fetched quietly in the background, the commit graph is drawn in rounded box characters with one colour per lane, and syntax highlighting follows the VS Code theme when there is one.
+TypeScript on Node 22, talking to `git` directly and drawing to the terminal with true colour and SGR mouse reporting. A file watcher refreshes the screen within a second of any change, reading each repository's summary one read at a time through a small shared pool; actions on a repository wait their turn, and a background fetch steps aside for them. Remotes are fetched quietly in the background, the commit graph is drawn in rounded box characters with one colour per lane, and syntax highlighting follows the VS Code theme when there is one.
 
 ## Features
 
 - **One catalogue for many repositories:** every repository under a folder, in an order you choose. Repositories can be added from anywhere by path and removed from the list without touching the folder.
 - **Commit graph:** lanes in their own colours, merges and forks drawn with rounded corners. Branch, remote and tag labels sit on tinted grounds.
-- **Live:** edits, commits, checkouts, fetches and new refs show up within about a second, and remotes are fetched in the background every few minutes. **Refresh** (`R`) rereads everything and fetches every remote at once.
+- **Live:** edits, commits, checkouts, fetches and new refs show up within about a second, linked worktrees and submodules included, and remotes are fetched in the background every few minutes. **Refresh** (`R`) rereads everything and fetches every remote at once.
 - **States made visible:** uncommitted changes, a rebase, merge, cherry-pick, revert or bisect stopped half way, conflicts, a detached HEAD.
 - **Files and diffs:** sorted by path, by status or as a tree, with old and new line numbers. Code is highlighted in the colours of your VS Code theme or the theme's own.
 - **Everything inside gittt:** stage files with checkboxes, commit (and push if you want) from a dialog, open any file in the viewer; nothing is handed to another program.
@@ -38,7 +38,7 @@ TypeScript on Node 20, talking to `git` directly and drawing to the terminal wit
 
 ## Requirements
 
-- Node.js 20 or newer and `git` on `PATH`.
+- Node.js 22.15 or newer and `git` 2.31 or newer on `PATH`.
 - A terminal with true colour and SGR mouse reporting. Tested in iTerm2 and the VS Code integrated terminal on macOS.
 
 ## Install
@@ -71,31 +71,31 @@ The first screen asks for the folder to search. Tab completes a path, the arrows
 
 ## The screen
 
-The toolbar across the top carries Commit, Pull, Push, Fetch, Refresh, Branch, Merge, Stash and Tag with their counts, and short messages appear at its right end: a copied hash, a finished action, an error. The sidebar has one row per repository with its change count, ahead and behind, and current branch; inside a repository are WORKSPACE (file status, history, search), BRANCHES, REMOTES, TAGS and STASHES, with Add, Rescan, ↑ and ↓ above the list. The filter bar switches All or Current Branch, remote branches, ancestor or date order, large or compact view, absolute or relative dates, and gitmoji or shortcodes. The log shows the graph, description, commit, author and date; the working tree is its own row, and a stopped operation and its conflicts are shown on it. The files pane lists the selected commit's files or the pending ones, by path, by status with conflicts first, or as a folder tree, and pending files carry a checkbox that stages them for the next commit. The diff pane shows the commit header and the selected file's diff hunk by hunk, or a whole file opened with a double click or Enter.
+The toolbar across the top carries Commit, Pull, Push, Fetch, Refresh, Branch, Merge, Stash, Tag and Settings with their counts, and short messages appear at its right end: a copied hash, a finished action, an error. The sidebar has one row per repository with its change count, ahead and behind, and current branch; inside a repository are WORKSPACE (file status, history, search), BRANCHES, REMOTES, TAGS and STASHES, with Add, Rescan, ↑ and ↓ above the list. The filter bar switches All or Current Branch, remote branches, ancestor or date order, large or compact view, absolute or relative dates, and gitmoji or shortcodes. The log shows the graph, description, commit, author and date; the working tree is its own row, and a stopped operation and its conflicts are shown on it. The files pane lists the selected commit's files or the pending ones, by path, by status with conflicts first, or as a folder tree, and pending files carry a checkbox that stages them for the next commit; a conflicted file still holding conflict markers is not staged. The diff pane shows the commit header and the selected file's diff hunk by hunk, or a whole file opened with a double click or Enter, with tabs expanded to `limits.tabWidth` cells. A terminal smaller than the layout needs says so instead of drawing broken panes.
 
 Compact View draws the graph one cell per lane and shows authors without email. Highlighting uses the theme VS Code is set to, `editor.tokenColorCustomizations` included, and falls back to Dark+ without VS Code.
 
 ## Dialogs
 
-| Action                      | Options                                                                                     |
-| --------------------------- | ------------------------------------------------------------------------------------------- |
-| Commit                      | message, amend the last commit, push immediately (off by default); commits the staged files |
-| Fetch                       | all remotes, prune, tags                                                                    |
-| Pull                        | remote and branch, commit merged changes, include messages, no fast-forward, rebase         |
-| Push                        | remote, branches with their upstreams, track new branches, all tags, force with lease       |
-| New Branch                  | name, from the working copy parent or a specified commit, checkout                          |
-| Delete Branches             | local and remote branches, force                                                            |
-| Merge                       | branch or commit, commit merged changes, include messages, no fast-forward, rebase          |
-| Stash                       | message, keep staged changes, include untracked files                                       |
-| Add Tag                     | name, commit, push, lightweight, message, move an existing tag                              |
-| Checkout                    | branch at the commit or a detached HEAD; remote branch as a new tracking branch             |
-| Rename / Delete Branch      | new name; force, also delete the upstream                                                   |
-| Remove / Push Tag           | from all remotes; to a chosen remote                                                        |
-| Reset                       | soft, mixed or hard                                                                         |
-| Rebase, Cherry-pick, Revert | confirmation; commit immediately, add "cherry picked from"                                  |
-| Apply / Pop / Delete Stash  | delete after applying, restore the staged state                                             |
+| Action                      | Options                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------ |
+| Commit                      | message, amend the last commit, push immediately (off by default); commits the staged files      |
+| Fetch                       | all remotes, prune, tags                                                                         |
+| Pull                        | remote and one of its branches, commit merged changes, include messages, no fast-forward, rebase |
+| Push                        | remote, branches with their upstreams, track new branches, all tags, force                       |
+| New Branch                  | name, from the working copy parent or a specified commit, checkout                               |
+| Delete Branches             | local and remote branches, force                                                                 |
+| Merge                       | branch or commit, commit merged changes, include messages, no fast-forward, rebase               |
+| Stash                       | message, keep staged changes, include untracked files                                            |
+| Add Tag                     | name, commit, push, lightweight, message, move an existing tag                                   |
+| Checkout                    | branch at the commit or a detached HEAD; remote branch as a new tracking branch                  |
+| Rename / Delete Branch      | new name; force, also delete the upstream                                                        |
+| Remove / Push Tag           | from all remotes; to a chosen remote                                                             |
+| Reset                       | soft, mixed or hard                                                                              |
+| Rebase, Cherry-pick, Revert | confirmation; commit immediately, add "cherry picked from"                                       |
+| Apply / Pop / Delete Stash  | delete after applying, restore the staged state                                                  |
 
-Checking out a local branch needs no dialog. Errors from git show in the toolbar.
+Checking out a local branch needs no dialog. Errors from git show in the toolbar. With "commit merged changes" off, a merge or pull never fast-forwards either, so nothing moves until you commit. A force push uses `--force-with-lease --force-if-includes`: it is refused when the remote holds commits your branch never saw, even after gittt fetched them in the background. Branch and tag names are checked by git's own rules before anything runs. Pull, push and fetch never stop to ask for a password or passphrase: ssh runs in batch mode (use an agent or a credential helper), and a remote that does not answer is stopped after `limits.fetchTimeoutSeconds`.
 
 ## Keyboard
 
@@ -109,6 +109,7 @@ Checking out a local branch needs no dialog. Errors from git show in the toolbar
 | `Enter`                         | open a repository or section, check out, open a file in the viewer                                        |
 | `Space`                         | fold / unfold in the sidebar, stage / unstage a pending file, context menu elsewhere                      |
 | `.`                             | context menu for the row                                                                                  |
+| `,`                             | Settings                                                                                                  |
 | `/`                             | filter the sidebar, or search commits in the log                                                          |
 | `y`                             | copy the selected commit's full hash                                                                      |
 | `c` `f` `p` `P` `b` `m` `s` `t` | Commit, Fetch, Pull, Push, Branch, Merge, Stash, Tag                                                      |
@@ -120,7 +121,7 @@ Checking out a local branch needs no dialog. Errors from git show in the toolbar
 | `1` – `6`                       | branches, remote branches, order, view, dates, gitmoji                                                    |
 | `v`                             | file list: by path, by status, tree                                                                       |
 | `[` `]` `{` `}` `(` `)` `<` `>` | narrow / widen the graph, author, date and sidebar columns                                                |
-| `q` `Ctrl+C`                    | quit                                                                                                      |
+| `q` `Ctrl+C`                    | quit; while an action runs, `q` waits for it to finish and a second `q` quits at once                     |
 
 ## Mouse
 
@@ -129,18 +130,18 @@ Checking out a local branch needs no dialog. Errors from git show in the toolbar
 | click                   | select, press a button, toggle a filter or a dialog option                             |
 | double-click            | check out a branch, tag or commit; open a file in the viewer (at the line from a diff) |
 | right-click             | context menu                                                                           |
-| wheel                   | scroll the pane under the pointer                                                      |
+| wheel                   | scroll the pane under the pointer; in a dialog, move between its controls              |
 | `Shift`+wheel, trackpad | scroll sideways                                                                        |
 | drag a divider          | resize the sidebar, the log and files, the files and diff, any column                  |
 | drag a repository row   | move the repository up or down the list                                                |
-| drag in the diff        | select text; it is copied to the clipboard on release                                  |
+| drag in the diff        | select text; it is copied to the clipboard on release (over ssh through the terminal)  |
 | click a checkbox        | stage or unstage a pending file; the header checkbox does all of them                  |
 | click a hash            | copy the full hash                                                                     |
 | `⌥` drag (iTerm2)       | the terminal's own selection anywhere                                                  |
 
 ## Configuration
 
-The **Settings** dialog (`,` or the toolbar) edits the everyday options: theme, icons, file view, branches, order, dates, remote branches, compact rows, gitmoji, how many commits to show, how deep to search, folders to skip, how often to fetch in the background, the diff limit, the double-click time and the recent-folder count. Its last box puts every setting back to its default, and its yellow button opens [Buy Me a Coffee](https://buymeacoffee.com/illinifellow).
+The **Settings** dialog (`,` or the toolbar) edits the everyday options: theme, icons, file view, branches, order, dates, remote branches, compact rows, gitmoji, how many commits to show, how deep to search, folders to skip, how often to fetch in the background, the diff limit, the double-click time and the recent-folder count. Changes apply at once; a new search depth or skip list searches the folder again. Its last box puts every setting back to its default, and its yellow button opens [Buy Me a Coffee](https://buymeacoffee.com/illinifellow).
 
 All configuration lives in one file, `settings.json`, in two places of the same shape:
 
@@ -149,25 +150,25 @@ All configuration lives in one file, `settings.json`, in two places of the same 
 | `config/settings.json` (in the package) | every default: settings, limits, columns, keys, themes, icon sets                                         |
 | `~/.config/gittt-cli/settings.json`     | only what you changed, plus what gittt remembers (`state`: recent folders, each folder's repository list) |
 
-The two are merged on start. Toggles and drags in the app write the user file; it can also be edited by hand, and removing a value puts it back to its default. `$XDG_CONFIG_HOME` moves the user file.
+The two are merged on start. Toggles and drags in the app write the user file, changing only the values that changed and replacing the file in one step. It can also be edited by hand: comments and trailing commas are fine, and removing a value puts it back to its default. A value of the wrong type or range falls back to its default, and a file gittt cannot parse is never overwritten; either way the toolbar says what and where. `$XDG_CONFIG_HOME` moves the user file.
 
-| Section    | What it holds                                                                                                                                                                                            |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `settings` | `theme`, `icons`, branches, remote branches, order, compact view, date format, gitmoji, file view, `maxCommits`, `scanDepth`, `scanExclude`, `fetchMinutes` (5 by default, 0 turns background fetch off) |
-| `limits`   | diff size cap, highlighting batch and cache sizes (the cache capped in total lines too), refresh delay, double-click time, status message times, watched paths to ignore                                 |
-| `columns`  | sidebar, graph, commit, author, date and files widths, lower panes' height (`null` sizes automatically)                                                                                                  |
-| `keys`     | the key for every action                                                                                                                                                                                 |
-| `themes`   | every theme in full: `colors`, `glyphs`, `spacing`                                                                                                                                                       |
-| `iconSets` | icon replacements, e.g. `nerd` for terminals with a Nerd Font                                                                                                                                            |
-| `tokens`   | single `colors`, `glyphs` or `spacing` values laid over the active theme                                                                                                                                 |
+| Section    | What it holds                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings` | `theme`, `icons`, branches, remote branches, order, compact view, date format, gitmoji, file view, `maxCommits`, `scanDepth`, `scanExclude`, `fetchMinutes` (5 by default, 0 turns background fetch off)                                                                                                                                                                                                                                          |
+| `limits`   | diff size cap, tab width, highlighting batch, progress and cache sizes, commit details and diff caches, cursor settle time, refresh delay, polling interval for a repository whose watcher failed, summary reads and Refresh fetches at once, fetch time limit and backoff, folders searched at once, double-click time and distance, input split time, status message times, update check interval, recent-folder count, watched paths to ignore |
+| `columns`  | sidebar, graph, commit, author, date and files widths, lower panes' height (`null` sizes automatically)                                                                                                                                                                                                                                                                                                                                           |
+| `keys`     | the key for every action                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `themes`   | every theme: `colors`, `glyphs`, `spacing`, `syntax`; a theme of your own may name the theme it `extends`                                                                                                                                                                                                                                                                                                                                         |
+| `iconSets` | icon replacements, e.g. `nerd` for terminals with a Nerd Font; `settings.icons` names one, or `unicode` for the theme's own                                                                                                                                                                                                                                                                                                                       |
+| `tokens`   | single `colors`, `glyphs` or `spacing` values laid over the active theme                                                                                                                                                                                                                                                                                                                                                                          |
 
 ### Themes
 
-Two themes ship: **golden-brown** (dark, warm orange on brown-tinted grounds) and **milk-and-honey** (light, warm milky grounds with an amber accent). `settings.theme` is `auto` by default: gittt asks the terminal for its background and picks milk-and-honey on a light one and golden-brown otherwise. golden-brown is drawn on the terminal's own background (its `background` is `transparent`); milk-and-honey paints its milky ground so it stays readable on any terminal. Each theme names its code highlighting in `syntax`: `vscode` for the editor's theme, or a bundled theme such as `light-plus`. A theme of your own is another entry under `themes`; anything it leaves out comes from the shipped themes.
+Two themes ship: **golden-brown** (dark, warm orange on brown-tinted grounds) and **milk-and-honey** (light, warm milky grounds with an amber accent). `settings.theme` is `auto` by default: gittt asks the terminal for its background and picks milk-and-honey on a light one and golden-brown otherwise. golden-brown is drawn on the terminal's own background (its `background` is `transparent`); milk-and-honey paints its milky ground so it stays readable on any terminal. Each theme names its code highlighting in `syntax`: `vscode` for the editor's theme, or a bundled theme such as `light-plus`. A theme of your own is another entry under `themes`; anything it leaves out, nested glyphs included, comes from the theme named in its `extends` (golden-brown when it names none). Icon sets and `tokens` replace single values the same way.
 
-- `colors`: background, text, muted text, borders, accent, selections, header and field grounds, branch, current branch, remote, tag, HEAD, stash, file states, diff grounds, label and pill colours, and `lanes` (the graph palette).
+- `colors`: background, text, muted text, borders, accent, selections, header and field grounds, branch, current branch, remote, tag, HEAD, stash, danger (errors, warnings, dangerous buttons), file states, diff grounds, label and pill colours, and `lanes` (the graph palette).
 - `glyphs`: every icon, mark and graph character (nodes, lines, corners, checkboxes, radio buttons, folders, file states).
-- `spacing`: sidebar indent, toolbar gaps, dialog and menu widths, checklist rows, search field width.
+- `spacing`: sidebar indent, toolbar gaps, dialog, menu, folder picker and checklist name widths, checklist rows, search field width, the smallest sidebar and pane sizes, column limits and the resize step.
 
 ## Development
 
@@ -175,10 +176,10 @@ Two themes ship: **golden-brown** (dark, warm orange on brown-tinted grounds) an
 npm install
 npm run build       # dist/app.js and the dist/cli.js launcher
 npm run typecheck
-npm test            # graph layout and drawing, dialogs and the git layer against real repositories
+npm test            # graph, dialogs, settings, input and text layout, the store and the git layer against real repositories, the main screen
 ```
 
-A running `gittt` restarts itself in place when `dist/app.js` changes, keeping the chosen folder.
+In a checkout, a running `gittt` restarts itself in place (same process, same folder) when `dist/app.js` changes.
 
 ## Contributing
 

@@ -25,9 +25,9 @@ describe("settings dialog", () => {
   /** Numbers must be whole and at least 1. */
   it("refuses a zero or a word in a number", () => {
     const values = initialValues(settingsDialog(loadDefaults()))
-    expect(validateSettings({ ...values, scanDepth: "0" })).toMatch(/scanDepth/)
-    expect(validateSettings({ ...values, maxCommits: "many" })).toMatch(/maxCommits/)
-    expect(validateSettings(values)).toBeNull()
+    expect(validateSettings(loadDefaults(), { ...values, scanDepth: "0" })).toMatch(/scanDepth/)
+    expect(validateSettings(loadDefaults(), { ...values, maxCommits: "many" })).toMatch(/maxCommits/)
+    expect(validateSettings(loadDefaults(), values)).toBeNull()
   })
   /** The coffee button leads where illinifellow.com does. */
   it("links Buy Me a Coffee", () => {

@@ -1,6 +1,7 @@
 /**
- * Theme resolution: which ground the screen paints and which colour tints mix with.
- * Catches a transparent theme painting a solid ground, or tints mixed with the word "transparent".
+ * Theme resolution: which ground the screen paints, which colour tints mix with, and what a partial theme inherits.
+ * Catches a transparent theme painting a solid ground, tints mixed with the word "transparent", and a theme of the
+ * user's own (or a single overridden glyph) losing every token it did not name, which broke drawing.
  */
 import { describe, expect, it } from "vitest"
 import { loadDefaults } from "@/config"
@@ -36,5 +37,38 @@ describe("resolveTheme", () => {
   it("picks the theme by the terminal background under auto", () => {
     expect(resolveTheme(withTheme("auto"), "#ffffff").surface).toBe(loadDefaults().themes[LIGHT_THEME].colors?.background)
     expect(resolveTheme(withTheme("auto"), "#000000").surface).toBeUndefined()
+  })
+
+  /** A theme of the user's own naming one colour gets every other token from the theme it extends. */
+  it("fills a partial theme from the default theme", () => {
+    const config = withTheme("mine")
+    config.themes = { ...config.themes, mine: { colors: { accent: "#123456" } } }
+    const theme = resolveTheme(config, "#000000")
+    const shipped = resolveTheme(withTheme(DEFAULT_THEME), "#000000")
+    expect(theme.colors.accent).toBe("#123456")
+    expect({ ...theme.colors, accent: shipped.colors.accent }).toEqual(shipped.colors)
+    expect(theme.glyphs).toEqual(shipped.glyphs)
+    expect(theme.spacing).toEqual(shipped.spacing)
+  })
+
+  /** `extends` picks the theme a partial theme starts from. */
+  it("fills a partial theme from the theme it extends", () => {
+    const config = withTheme("mine")
+    config.themes = { ...config.themes, mine: { extends: LIGHT_THEME, colors: { accent: "#123456" } } }
+    const theme = resolveTheme(config, "#000000")
+    expect(theme.colors.text).toBe(loadDefaults().themes[LIGHT_THEME].colors?.text)
+    expect(theme.syntax).toBe(loadDefaults().themes[LIGHT_THEME].syntax)
+  })
+
+  /** One overridden graph glyph replaces that glyph only; the icon set and the tokens are laid over value by value. */
+  it("overrides nested glyphs one by one", () => {
+    const config = withTheme(DEFAULT_THEME)
+    config.tokens = { glyphs: { graph: { node: "*" } } }
+    config.iconSets = { ...config.iconSets, partial: { status: { added: "A" } } }
+    config.settings.icons = "partial"
+    const theme = resolveTheme(config, "#000000")
+    const shipped = loadDefaults().themes[DEFAULT_THEME].glyphs
+    expect(theme.glyphs.graph).toEqual({ ...shipped?.graph, node: "*" })
+    expect(theme.glyphs.status).toEqual({ ...shipped?.status, added: "A" })
   })
 })

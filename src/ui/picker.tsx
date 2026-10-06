@@ -1,21 +1,24 @@
 /**
  * The first screen: asks which folder to search for repositories, prefilled
  * with the current directory, with recent folders below. Tab completes a
- * folder name, ↑ ↓ pick a recent folder, Enter starts, Esc quits.
+ * folder name, ↑ ↓ or a click pick a recent folder, a double click or Enter
+ * starts, Esc quits.
  */
 import { existsSync, readdirSync, statSync } from "node:fs"
-import { homedir } from "node:os"
-import { basename, dirname, join, resolve } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { Box, Text, useApp, useInput } from "ink"
-import { useEffect, useRef, useState } from "react"
-import { mouse, type MouseEvent } from "@/mouse"
+import { useState } from "react"
+import { Clickable } from "@/mouse/regions"
+import { expandPath } from "@/scan"
 import { fit } from "./text"
 import { useTheme } from "./theme"
 
-const expand = (path: string) => resolve(path.replace(/^~(?=$|\/)/, homedir()))
-
+/**
+ * @param typed the path typed so far
+ * @returns the path completed to the longest folder name the matches share, with a slash when one folder matches
+ */
 const complete = (typed: string) => {
-  const path = expand(typed)
+  const path = expandPath(typed)
   const folder = typed.endsWith("/") ? path : dirname(path)
   const prefix = typed.endsWith("/") ? "" : basename(path)
   try {
@@ -32,21 +35,21 @@ const complete = (typed: string) => {
 
 /**
  * @param props.initial folder the input starts with
- * @param props.recent recently opened folders, newest first
+ * @param props.recent recently opened folders, newest first, as many as `limits.recentFolders` keeps
  * @param props.onPick called with the chosen folder once it exists
  * @param props.width screen width in cells
  */
 export const FolderPicker = ({ initial, recent, onPick, width }: { initial: string; recent: string[]; onPick: (folder: string) => void; width: number }) => {
-  const { colors: palette, glyphs, surface } = useTheme()
+  const { colors: palette, glyphs, spacing, surface } = useTheme()
   const { exit } = useApp()
   const [value, setValue] = useState(initial)
   const [cursor, setCursor] = useState(-1)
   const [error, setError] = useState<string | null>(null)
-  const choices = recent.filter(folder => folder !== initial).slice(0, 8)
+  const choices = recent.filter(folder => folder !== initial)
   useInput((input, key) => {
     if (key.escape) return exit()
     if (key.return) {
-      const folder = expand(value)
+      const folder = expandPath(value)
       if (!existsSync(folder) || !statSync(folder).isDirectory()) return setError(`${folder} is not a folder`)
       return onPick(folder)
     }
@@ -63,22 +66,12 @@ export const FolderPicker = ({ initial, recent, onPick, width }: { initial: stri
       setValue(value + input)
     }
   })
-  const firstRecentRow = 9 + (error ? 1 : 0)
-  const handler = useRef((_event: MouseEvent) => undefined as void)
-  handler.current = event => {
-    if (event.kind !== "down" || event.button !== "left") return
-    const index = event.y - firstRecentRow
-    if (index < 0 || index >= choices.length) return
+  const choose = (index: number) => {
     setCursor(index)
     setValue(choices[index])
-    if (event.double) onPick(choices[index])
+    setError(null)
   }
-  useEffect(() => {
-    const listener = (event: MouseEvent) => handler.current(event)
-    mouse.on("mouse", listener)
-    return () => void mouse.off("mouse", listener)
-  }, [])
-  const boxWidth = Math.min(90, width - 4)
+  const boxWidth = Math.min(spacing.pickerWidth, width - 4)
   return (
     <Box flexDirection="column" paddingX={2} paddingY={1} width={width} minHeight={process.stdout.rows ?? 24} backgroundColor={surface}>
       <Text color={palette.accent} bold>gittt</Text>
@@ -86,9 +79,13 @@ export const FolderPicker = ({ initial, recent, onPick, width }: { initial: stri
       <Box borderStyle="round" borderColor={palette.accent} borderBackgroundColor={surface} backgroundColor={surface} width={boxWidth} marginTop={1}>
         <Text color={palette.text}>{fit(`${value}${glyphs.cursor}`, boxWidth - 2)}</Text>
       </Box>
-      {error ? <Text color={palette.stash}>{glyphs.error} {error}</Text> : null}
+      {error ? <Text color={palette.danger}>{glyphs.error} {error}</Text> : null}
       {choices.length ? <Text color={palette.textMuted}>Recent</Text> : null}
-      {choices.map((folder, index) => <Text key={folder} color={index === cursor ? palette.accent : palette.text}>{index === cursor ? `${glyphs.pointer} ` : "  "}{folder}</Text>)}
+      {choices.map((folder, index) => (
+        <Clickable key={folder} height={1} onClick={() => choose(index)} onDoubleClick={() => onPick(folder)}>
+          <Text color={index === cursor ? palette.accent : palette.text}>{index === cursor ? `${glyphs.pointer} ` : "  "}{folder}</Text>
+        </Clickable>
+      ))}
       <Text color={palette.textMuted}>{"\n"}enter start · tab complete · ↑↓ or click recent · double-click opens · esc quit</Text>
     </Box>
   )

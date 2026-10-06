@@ -23,36 +23,47 @@
       ".next",
       "dist",
       "build",
-      "out",
       "vendor",
       "Pods",
       ".tmp",
-      "tmp",
-      "marketplace-cache",
-      "plugins",
-      "extensions",
-      ".vscode-shared"
+      "tmp"
     ]
   },
   "limits": {
     "diffKilobytes": 600,
+    "tabWidth": 4,
     "highlightMaxLines": 40000,
     "highlightChunkLines": 300,
     "highlightCacheSize": 24,
+    "highlightCacheLines": 40000,
+    "highlightProgressMs": 120,
+    "detailsCacheEntries": 256,
+    "detailsCacheCharacters": 4194304,
+    "diffCacheEntries": 64,
+    "diffCacheCharacters": 8388608,
+    "settleMs": 90,
     "refreshDelayMs": 350,
+    "pollSeconds": 5,
+    "summaryReads": 4,
+    "refreshFetches": 3,
+    "fetchTimeoutSeconds": 120,
+    "fetchBackoff": 8,
+    "scanConcurrency": 32,
     "doubleClickMs": 400,
+    "doubleClickCells": 2,
+    "inputSplitMs": 30,
     "backgroundQueryMs": 200,
     "statusMs": 4000,
     "errorStatusMs": 8000,
+    "updateCheckHours": 6,
+    "recentFolders": 12,
     "watchIgnore": [
-      ".git/objects",
       "node_modules",
       ".next",
       "dist",
       "build",
       "out"
-    ],
-    "recentFolders": 12
+    ]
   },
   "columns": {
     "tree": 36,
@@ -118,6 +129,7 @@
         "tag": "#ebcb8b",
         "head": "#a3be8c",
         "stash": "#ff6b81",
+        "danger": "#ff6b81",
         "added": "#a3be8c",
         "deleted": "#ff6b81",
         "modified": "#ebcb8b",
@@ -210,7 +222,15 @@
         "dialogLabel": 26,
         "menuWidth": 48,
         "checklistRows": 8,
-        "searchWidth": 24
+        "searchWidth": 24,
+        "checklistLabel": 32,
+        "pickerWidth": 90,
+        "sidebarMinWidth": 20,
+        "paneMinWidth": 12,
+        "paneMinHeight": 3,
+        "columnMinWidth": 4,
+        "columnMaxWidth": 80,
+        "resizeStep": 2
       },
       "syntax": "vscode"
     },
@@ -232,6 +252,7 @@
         "tag": "#8a6d1d",
         "head": "#2f7a4d",
         "stash": "#c14840",
+        "danger": "#c14840",
         "added": "#2f7a4d",
         "deleted": "#c14840",
         "modified": "#a3520b",
@@ -324,7 +345,15 @@
         "dialogLabel": 26,
         "menuWidth": 48,
         "checklistRows": 8,
-        "searchWidth": 24
+        "searchWidth": 24,
+        "checklistLabel": 32,
+        "pickerWidth": 90,
+        "sidebarMinWidth": 20,
+        "paneMinWidth": 12,
+        "paneMinHeight": 3,
+        "columnMinWidth": 4,
+        "columnMaxWidth": 80,
+        "resizeStep": 2
       },
       "syntax": "light-plus"
     }

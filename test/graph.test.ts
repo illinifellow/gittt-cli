@@ -7,10 +7,12 @@ import { describe, expect, it } from "vitest"
 import { layoutGraph } from "@/graph"
 import { loadDefaults } from "@/config"
 import { drawCells } from "@/lanes"
-
-const GRAPH = loadDefaults().themes["golden-brown"].glyphs!.graph!
-import { DEFAULT_COLUMNS } from "./columns"
+import { resolveTheme } from "@/theme"
 import { graphWidth } from "@/ui/log"
+
+const GRAPH = resolveTheme(loadDefaults(), undefined).glyphs.graph
+/** Column widths the tests size against: the shipped defaults, whose graph width is automatic. */
+const DEFAULT_COLUMNS = loadDefaults().columns
 
 const commit = (hash: string, ...parents: string[]) => ({ hash, parents })
 

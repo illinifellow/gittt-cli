@@ -20,7 +20,7 @@ const context = await esbuild.context({
   bundle: true,
   platform: "node",
   format: "esm",
-  target: "node20",
+  target: "node22",
   jsx: "automatic",
   packages: "external",
   tsconfig: "tsconfig.json",

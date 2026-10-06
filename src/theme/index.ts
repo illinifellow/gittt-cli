@@ -2,9 +2,12 @@
  * Themes: every colour, glyph and spacing value gittt draws with, as named
  * tokens. The themes themselves live in `config/settings.json` (golden-brown and
  * milk-and-honey ship; `auto` picks one by the terminal's background) and can be
- * changed or added in the user settings; its `tokens` section overrides single values on top
- * of the active theme. Components read the resolved theme and hold no literals.
+ * changed or added in the user settings: a theme of the user's own names the
+ * theme it `extends` (golden-brown when it names none) and everything it leaves
+ * out comes from there. An icon set and the `tokens` section are laid over the
+ * result, value by value. Components read the resolved theme and hold no literals.
  */
+import { AUTO_THEME, overlay, type Config } from "@/config"
 
 /** Colours, as `#rrggbb`. */
 export interface ColorTokens {
@@ -25,6 +28,8 @@ export interface ColorTokens {
   tag: string
   head: string
   stash: string
+  /** Errors, warnings and dangerous buttons. */
+  danger: string
   added: string
   deleted: string
   modified: string
@@ -38,8 +43,6 @@ export interface ColorTokens {
   pillText: string
   lanes: string[]
 }
-
-import type { Config } from "@/config"
 
 /** Characters for icons, marks and the graph. */
 export interface GlyphTokens {
@@ -83,6 +86,9 @@ export interface GlyphTokens {
   graph: Record<"node" | "head" | "working" | "vertical" | "horizontal" | "downRight" | "downLeft" | "upRight" | "upLeft" | "teeLeft" | "teeRight" | "teeUp" | "teeDown" | "cross" | "endUp" | "endDown", string>
 }
 
+/** Glyph tokens with any of them left out, in the nested groups too. */
+export type PartialGlyphs = Partial<Omit<GlyphTokens, "status" | "graph">> & { status?: Partial<GlyphTokens["status"]>; graph?: Partial<GlyphTokens["graph"]> }
+
 /** Sizes in terminal cells and rows. */
 export interface SpacingTokens {
   indent: number
@@ -91,7 +97,19 @@ export interface SpacingTokens {
   dialogLabel: number
   menuWidth: number
   checklistRows: number
+  /** Cells for an item's name in a dialog checklist; its detail takes the rest of the row. */
+  checklistLabel: number
   searchWidth: number
+  pickerWidth: number
+  sidebarMinWidth: number
+  /** The narrowest the log, files and diff panes get, in cells. */
+  paneMinWidth: number
+  /** The fewest rows the lower panes get. */
+  paneMinHeight: number
+  columnMinWidth: number
+  columnMaxWidth: number
+  /** Cells a column grows or shrinks per key press. */
+  resizeStep: number
 }
 
 /** A full theme. */
@@ -105,10 +123,12 @@ export interface Theme {
   surface: string | undefined
 }
 
-/** Partial overrides of a theme, as stored in the config. */
+/** A theme as stored in the config: complete for the shipped themes, partial for the user's own. */
 export interface ThemeOverrides {
+  /** The theme that fills what this one leaves out; golden-brown when absent. */
+  extends?: string
   colors?: Partial<ColorTokens>
-  glyphs?: Partial<GlyphTokens>
+  glyphs?: PartialGlyphs
   spacing?: Partial<SpacingTokens>
   syntax?: string
 }
@@ -139,22 +159,37 @@ const luminance = (color: string) => {
 export const autoTheme = (background: string | undefined) => background && luminance(background) > 0.5 ? LIGHT_THEME : DEFAULT_THEME
 
 /**
+ * Fills a theme from the themes it extends, nearest last.
+ * @param themes every configured theme
+ * @param name the theme to complete
+ * @param seen themes already on the chain, so a loop ends at the default theme
+ * @returns the theme with every token its chain supplies; the default theme alone for a name not in `themes`
+ */
+const completeTheme = (themes: Config["themes"], name: string, seen = new Set<string>()): ThemeOverrides => {
+  const theme = themes[name]
+  if (!theme || name === DEFAULT_THEME || seen.has(name)) return themes[DEFAULT_THEME]
+  seen.add(name)
+  return overlay(completeTheme(themes, theme.extends ?? DEFAULT_THEME, seen), theme)
+}
+
+/**
  * Builds the active theme from the configuration.
  * @param config themes, icon sets, overrides and settings (`theme`, `icons`)
  * @param background the terminal background; `auto` chooses the theme by it, and a transparent theme mixes its tints with it
- * @returns the theme components draw with; a theme name missing from `themes` falls back to the default theme. Under a transparent background `colors.background` is the terminal's (black when unknown), which opaque overlays such as dialogs paint, and `surface` is `undefined`
+ * @returns the theme components draw with: the named theme filled from the themes it extends, then the icon set and
+ *   the tokens laid over it value by value; a theme name missing from `themes` falls back to the default theme. Under a
+ *   transparent background `colors.background` is the terminal's (black when unknown), which opaque overlays such as
+ *   dialogs paint, and `surface` is `undefined`
  */
 export const resolveTheme = (config: Pick<Config, "themes" | "iconSets" | "tokens"> & { settings: { theme: string; icons: string } }, background: string | undefined): Theme => {
-  const name = config.settings.theme === "auto" ? autoTheme(background) : config.settings.theme
-  const theme = (config.themes[name] ?? config.themes[DEFAULT_THEME]) as Theme
-  const overrides = config.tokens
-  const colors = { ...theme.colors, ...overrides.colors }
-  const transparent = colors.background === TRANSPARENT
+  const name = config.settings.theme === AUTO_THEME ? autoTheme(background) : config.settings.theme
+  const theme = overlay(overlay(completeTheme(config.themes, name), { glyphs: config.iconSets[config.settings.icons] }), config.tokens) as Omit<Theme, "surface">
+  const transparent = theme.colors.background === TRANSPARENT
   return {
-    colors: transparent ? { ...colors, background: background ?? FALLBACK_GROUND } : colors,
-    glyphs: { ...theme.glyphs, ...config.iconSets[config.settings.icons], ...overrides.glyphs },
-    spacing: { ...theme.spacing, ...overrides.spacing },
-    syntax: overrides.syntax ?? theme.syntax,
-    surface: transparent ? undefined : colors.background,
+    colors: transparent ? { ...theme.colors, background: background ?? FALLBACK_GROUND } : theme.colors,
+    glyphs: theme.glyphs,
+    spacing: theme.spacing,
+    syntax: theme.syntax,
+    surface: transparent ? undefined : theme.colors.background,
   }
 }

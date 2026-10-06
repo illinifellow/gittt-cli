@@ -1,6 +1,6 @@
 {
   "name": "gittt-cli",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A git browser for the terminal: a catalogue of every repository under a folder, a commit graph, files and highlighted diffs, dialogs for every action and full mouse support.",
   "license": "MIT",
   "type": "module",
@@ -16,7 +16,7 @@
     "url": "https://github.com/illinifellow/gittt-cli.git"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.15"
   },
   "scripts": {
     "build": "node build.mjs",
@@ -36,7 +36,6 @@
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "esbuild": "^0.28.2",
-    "ink-testing-library": "^4.0.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
   },

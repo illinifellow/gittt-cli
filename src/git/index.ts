@@ -1,11 +1,13 @@
 /**
  * The git command line, wrapped: every read the views need (repository summary,
  * log, commit details, file diffs) and the runner the actions use. Parsing uses
- * unit and record separators so no message or ref name can break a field.
+ * unit and record separators so no message or ref name can break a field, and
+ * every path gittt hands git is a literal file name, never a pattern.
  */
 import { spawn, type ChildProcess } from "node:child_process"
-import { open, readFile } from "node:fs/promises"
+import { open, readFile, stat } from "node:fs/promises"
 import { basename, join } from "node:path"
+import { loadConfig } from "@/config"
 import { WORKING_TREE, type Branch, type ChangedFile, type Commit, type CommitDetails, type Operation, type Repository, type ViewSettings } from "@/protocol"
 
 const UNIT = "\x1f"
@@ -14,7 +16,11 @@ const RECORD = "\x1e"
 const MAX_BUFFER = 256 * 1024 * 1024
 /** Standard error kept for the error message; the rest is dropped. */
 const MAX_ERROR_BYTES = 64 * 1024
-const GIT_ENVIRONMENT = { ...process.env, GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C", GIT_TERMINAL_PROMPT: "0" }
+/** Never takes optional locks, never asks for a password, and reads every path as a literal name (`*.txt` is one file). */
+const GIT_ENVIRONMENT = { ...process.env, GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_LITERAL_PATHSPECS: "1" }
+
+/** Commands that talk to a remote: user actions run them unattended and with a time limit. */
+const NETWORK_COMMANDS = new Set(["fetch", "pull", "push"])
 
 /** Options of one git run. */
 export interface GitOptions {
@@ -34,12 +40,20 @@ const running = new Set<ChildProcess>()
 const abortError = () => Object.assign(new Error("git run aborted"), { name: "AbortError" })
 
 /**
+ * Decodes UTF-8 output; a cut output drops a character split at the cut instead of showing a replacement mark.
+ * @param buffer the bytes
+ * @param cut whether the bytes stop part way through the real output
+ * @returns the text
+ */
+const decodeText = (buffer: Buffer, cut: boolean) => new TextDecoder().decode(buffer, { stream: cut })
+
+/**
  * Runs git and resolves with its standard output and whether it was cut at `maxBytes`.
  * @param cwd repository directory the command runs in
  * @param args arguments after `git`
  * @param options accepted exit codes, abort signal, output limit
  * @returns standard output and `cut`; rejects with an error naming the command, the directory and git's standard error,
- *   or with an `AbortError` when the signal fired
+ *   with an error saying the time ran out when the signal fired on a timeout, or with an `AbortError` when it fired otherwise
  */
 export const runGitOutput = (cwd: string, args: string[], { acceptedExitCodes = [], signal, maxBytes = MAX_BUFFER, env }: GitOptions = {}) =>
   new Promise<{ stdout: string; cut: boolean }>((resolve, reject) => {
@@ -77,8 +91,8 @@ export const runGitOutput = (cwd: string, args: string[], { acceptedExitCodes = 
     child.on("close", code => {
       running.delete(child)
       signal?.removeEventListener("abort", stop)
-      if (signal?.aborted) return reject(abortError())
-      const stdout = Buffer.concat(chunks).toString("utf8")
+      if (signal?.aborted) return reject((signal.reason as Error | undefined)?.name === "TimeoutError" ? new Error(`git ${args.join(" ")} gave no answer in time in ${cwd} and was stopped`) : abortError())
+      const stdout = decodeText(Buffer.concat(chunks), cut)
       if (cut || (code !== null && (code === 0 || acceptedExitCodes.includes(code)))) return resolve({ stdout, cut })
       const stderr = Buffer.concat(errors).toString("utf8").trim()
       reject(new Error(`git ${args.join(" ")} failed in ${cwd}: ${stderr || failure?.message || `exit code ${code}`}`))
@@ -103,29 +117,38 @@ const parseTrack = (track: string) => ({
   gone: track.includes("gone"),
 })
 
-const CONFLICT_CODES = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"])
-
 /**
- * Parses `git status --porcelain=v1 -z` output into changed files, one per path.
- * The status letter is the index side when it changed, else the working-tree side; conflicts are `U`, untracked `?`.
- * @param output raw NUL-separated status output
- * @returns changed files in git's order
+ * Parses `git status --porcelain=v2 -z --branch` output.
+ * The status letter of a file is the index side when it changed, else the working-tree side; conflicts are `U`,
+ * untracked files `?`.
+ * @param output raw NUL-separated status output, optionally with `--ignored=traditional` entries
+ * @returns HEAD's branch (`null` when detached) and hash (`null` before the first commit), the changed files in git's
+ *   order, and the ignored paths (folders end in `/`)
  */
-const parseStatus = (output: string): ChangedFile[] => {
+export const parseStatus = (output: string) => {
+  const status = { branch: null as string | null, hash: null as string | null, files: [] as ChangedFile[], ignored: [] as string[] }
   const entries = output.split("\0")
-  const files: ChangedFile[] = []
   for (let index = 0; index < entries.length; index++) {
     const entry = entries[index]
-    if (entry.length < 4) continue
-    const code = entry.slice(0, 2)
-    const renamed = code[0] === "R" || code[0] === "C"
-    const previousPath = renamed ? entries[++index] : null
-    const conflicted = CONFLICT_CODES.has(code)
-    const untracked = code[0] === "?"
-    const status = conflicted ? "U" : untracked ? "?" : code[0] !== " " ? code[0] : code[1]
-    files.push({ status, path: entry.slice(3), previousPath, staged: !conflicted && !untracked && code[0] !== " ", unstaged: untracked || conflicted || code[1] !== " " })
+    const fields = entry.split(" ")
+    if (entry.startsWith("# branch.oid ")) status.hash = fields[2] === "(initial)" ? null : fields[2]
+    else if (entry.startsWith("# branch.head ")) status.branch = entry.slice(14) === "(detached)" ? null : entry.slice(14)
+    else if (fields[0] === "!") status.ignored.push(entry.slice(2))
+    else if (fields[0] === "?") status.files.push({ status: "?", path: entry.slice(2), previousPath: null, staged: false, unstaged: true })
+    else if (fields[0] === "u") status.files.push({ status: "U", path: fields.slice(10).join(" "), previousPath: null, staged: false, unstaged: true })
+    else if (fields[0] === "1" || fields[0] === "2") {
+      const [indexSide, workSide] = fields[1]
+      const renamed = fields[0] === "2"
+      status.files.push({
+        status: indexSide !== "." ? indexSide : workSide,
+        path: fields.slice(renamed ? 9 : 8).join(" "),
+        previousPath: renamed ? entries[++index] : null,
+        staged: indexSide !== ".",
+        unstaged: workSide !== ".",
+      })
+    }
   }
-  return files
+  return status
 }
 
 const readText = (path: string) => readFile(path, "utf8").then(text => text.trim(), () => null)
@@ -153,46 +176,60 @@ export const readOperation = async (gitDirectory: string): Promise<Operation | n
   return null
 }
 
-/**
- * Counts what `git status --porcelain=v2 -z --branch` reports and reads HEAD from its branch headers.
- * @param output raw NUL-separated status output, optionally with `--ignored=traditional` entries
- * @returns HEAD's branch (`null` when detached) and hash (`null` before the first commit), the change counts,
- *   and the ignored paths (folders end in `/`)
- */
-export const parseStatusSummary = (output: string) => {
-  const summary = { branch: null as string | null, hash: null as string | null, changes: 0, staged: 0, conflicts: 0, ignored: [] as string[] }
-  const entries = output.split("\0")
-  for (let index = 0; index < entries.length; index++) {
-    const entry = entries[index]
-    if (entry.startsWith("# branch.oid ")) summary.hash = entry.slice(13) === "(initial)" ? null : entry.slice(13)
-    else if (entry.startsWith("# branch.head ")) summary.branch = entry.slice(14) === "(detached)" ? null : entry.slice(14)
-    else if (entry.startsWith("! ")) summary.ignored.push(entry.slice(2))
-    else if (entry.startsWith("? ")) summary.changes++
-    else if (entry.startsWith("u ")) {
-      summary.changes++
-      summary.conflicts++
-    } else if (entry.startsWith("1 ") || entry.startsWith("2 ")) {
-      summary.changes++
-      if (entry[2] !== ".") summary.staged++
-      if (entry[0] === "2") index++
-    }
-  }
-  return summary
+/** A repository's own git directory and the one its refs and config live in (they differ for linked worktrees). */
+export interface GitDirectories {
+  gitDirectory: string
+  commonDirectory: string
 }
 
-/** Git directories by repository root; a repository's git directory never moves while gittt runs. */
-const gitDirectories = new Map<string, Promise<string>>()
+/** Git directories by repository root; they never move while gittt runs. */
+const gitDirectories = new Map<string, Promise<GitDirectories>>()
 /** Each repository's stash list with the `refs/stash` hash it was read at, so an unchanged stash is not listed again. */
 const stashLists = new Map<string, { tip: string; stashes: Repository["stashes"] }>()
+/** Each repository's configured remote names with the config file's change time they were read at. */
+const remoteNames = new Map<string, { changed: number; names: string[] }>()
 
-const gitDirectoryOf = (path: string) => {
-  let directory = gitDirectories.get(path)
-  if (!directory) {
-    directory = runGit(path, ["rev-parse", "--absolute-git-dir"]).then(output => output.trim())
-    directory.catch(() => gitDirectories.delete(path))
-    gitDirectories.set(path, directory)
+/**
+ * @param path repository root
+ * @returns its absolute git directories, read once per repository; rejects when `path` is no repository
+ */
+export const readGitDirectories = (path: string) => {
+  let directories = gitDirectories.get(path)
+  if (!directories) {
+    directories = runGit(path, ["rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"]).then(output => {
+      const [gitDirectory, commonDirectory] = output.trim().split("\n")
+      return { gitDirectory, commonDirectory }
+    })
+    directories.catch(() => gitDirectories.delete(path))
+    gitDirectories.set(path, directories)
   }
-  return directory
+  return directories
+}
+
+/**
+ * Lists the configured remotes, again only when the repository's config file changed.
+ * @param path repository root
+ * @param commonDirectory the git directory holding the config
+ * @returns remote names, including remotes that have no tracking branches yet
+ */
+const readRemoteNames = async (path: string, commonDirectory: string) => {
+  const changed = (await stat(join(commonDirectory, "config")).catch(() => null))?.mtimeMs ?? -1
+  const known = remoteNames.get(path)
+  if (known && known.changed === changed && changed !== -1) return known.names
+  const names = (await runGit(path, ["remote"])).split("\n").filter(Boolean)
+  remoteNames.set(path, { changed, names })
+  return names
+}
+
+/**
+ * Splits a short remote-tracking name such as `origin/feature/x` at the remote it belongs to; remote names may hold `/`.
+ * @param name the short name
+ * @param remotes known remote names
+ * @returns the longest remote the name starts with and the branch after it, or `null` when no remote matches
+ */
+export const splitRemoteRef = (name: string, remotes: string[]) => {
+  const remote = remotes.filter(candidate => name.startsWith(`${candidate}/`)).sort((first, second) => second.length - first.length)[0]
+  return remote === undefined ? null : { remote, branch: name.slice(remote.length + 1) }
 }
 
 const readStashes = async (path: string, tip: string) => {
@@ -211,7 +248,8 @@ const readStashes = async (path: string, tip: string) => {
 /**
  * Reads everything the repository tree shows: HEAD, local and remote branches, tags, stashes, change count.
  * One git process at a time, two per read: `git status`, then `for-each-ref` (refs and the stash tip); the stash
- * list is read again only when `refs/stash` moved, the git directory once per repository.
+ * list is read again only when `refs/stash` moved, the remote names only when the config changed, the git directories
+ * once per repository.
  * @param path repository root
  * @returns the summary, and the paths git ignores there (folders end in `/`) so the watcher can skip their changes;
  *   a repository git cannot read comes back empty with `error` set
@@ -233,17 +271,17 @@ export const readRepositoryState = async (path: string): Promise<{ repository: R
   }
   let ignored: string[] = []
   try {
-    const gitDirectory = await gitDirectoryOf(path)
-    const status = await runGit(path, ["status", "--porcelain=v2", "-z", "--branch", "--no-ahead-behind", "-unormal", "--ignored=traditional"])
+    const { gitDirectory, commonDirectory } = await readGitDirectories(path)
+    const status = parseStatus(await runGit(path, ["status", "--porcelain=v2", "-z", "--branch", "--no-ahead-behind", "-unormal", "--ignored=traditional"]))
     const refs = await runGit(path, ["for-each-ref", `--format=%(refname)${UNIT}%(objectname)${UNIT}%(*objectname)${UNIT}%(upstream:short)${UNIT}%(upstream:track,nobracket)${UNIT}%(HEAD)`, "refs/heads", "refs/remotes", "refs/tags", "refs/stash"])
-    const summary = parseStatusSummary(status)
-    ignored = summary.ignored
-    repository.head = { branch: summary.branch, hash: summary.hash }
-    repository.changes = summary.changes
-    repository.staged = summary.staged
-    repository.conflicts = summary.conflicts
+    ignored = status.ignored
+    repository.head = { branch: status.branch, hash: status.hash }
+    repository.changes = status.files.length
+    repository.staged = status.files.filter(file => file.staged).length
+    repository.conflicts = status.files.filter(file => file.status === "U").length
     repository.operation = await readOperation(gitDirectory)
-    const remotes = new Map<string, Repository["remotes"][number]>()
+    const names = await readRemoteNames(path, commonDirectory)
+    const remotes = new Map<string, Repository["remotes"][number]>(names.map(name => [name, { name, branches: [] }]))
     let stashTip = ""
     for (const line of refs.split("\n")) {
       if (!line) continue
@@ -252,8 +290,8 @@ export const readRepositoryState = async (path: string): Promise<{ repository: R
         const branch: Branch = { name: refName.slice(11), hash: objectName, upstream: upstream || null, current: headMark === "*", ...parseTrack(track) }
         repository.branches.push(branch)
       } else if (refName.startsWith("refs/remotes/")) {
-        const [remote, ...rest] = refName.slice(13).split("/")
-        const name = rest.join("/")
+        const short = refName.slice(13)
+        const { remote, branch: name } = splitRemoteRef(short, names) ?? { remote: short.slice(0, short.indexOf("/")), branch: short.slice(short.indexOf("/") + 1) }
         if (name === "HEAD") continue
         const group = remotes.get(remote) ?? { name: remote, branches: [] }
         group.branches.push({ remote, name, hash: objectName })
@@ -270,38 +308,60 @@ export const readRepositoryState = async (path: string): Promise<{ repository: R
   return { repository, ignored }
 }
 
-/** Each repository's ssh command for unattended fetches: its own `core.sshCommand` (or ssh) told never to ask. */
+/** Each repository's ssh command for unattended runs: the user's ssh command told never to ask. */
 const sshCommands = new Map<string, Promise<string>>()
 
-const unattendedSsh = (path: string) => {
+/**
+ * The environment that keeps a remote from asking anything: no password prompt (set for every run) and ssh in batch
+ * mode, so a remote that needs input fails instead of drawing over the screen. `GIT_SSH_COMMAND` wins over
+ * `core.sshCommand`, as in git itself.
+ * @param path repository root
+ * @returns variables to add to git's environment; `undefined` when the user set only `GIT_SSH`, whose program takes no ssh options
+ */
+const networkEnvironment = async (path: string) => {
+  if (process.env.GIT_SSH && !process.env.GIT_SSH_COMMAND) return undefined
   let command = sshCommands.get(path)
   if (!command) {
     command = runGit(path, ["config", "--get", "core.sshCommand"], { acceptedExitCodes: [1] })
-      .then(configured => `${configured.trim() || process.env.GIT_SSH_COMMAND || "ssh"} -o BatchMode=yes`)
+      .then(configured => `${process.env.GIT_SSH_COMMAND || configured.trim() || "ssh"} -o BatchMode=yes`)
     command.catch(() => sshCommands.delete(path))
     sshCommands.set(path, command)
   }
-  return command
+  return { GIT_SSH_COMMAND: await command }
 }
 
 /**
- * Fetches every remote of a repository without asking anything: no password or passphrase prompt, ssh in batch mode,
- * so a remote that needs input fails instead of drawing over the screen.
+ * Fetches every remote of a repository without asking anything (see `networkEnvironment`).
  * @param path repository root
- * @param signal aborting stops the fetch and rejects with an `AbortError`
+ * @param signal aborting stops the fetch and rejects with an `AbortError`, or with a time-out error for a timeout signal
  * @returns once fetched; rejects with git's error when a remote cannot be reached or needs credentials
  */
 export const fetchRemotes = async (path: string, signal?: AbortSignal) => {
-  const env = process.env.GIT_SSH && !process.env.GIT_SSH_COMMAND ? undefined : { GIT_SSH_COMMAND: await unattendedSsh(path) }
-  await runGit(path, ["fetch", "--all", "--quiet"], { signal, env })
+  await runGit(path, ["fetch", "--all", "--quiet"], { signal, env: await networkEnvironment(path) })
 }
 
 /**
- * Reads everything the repository tree shows (see `readRepositoryState`).
+ * Runs one command of a user action. A command that talks to a remote (fetch, pull, push) runs unattended
+ * (see `networkEnvironment`) and is stopped once `timeoutMs` passed.
  * @param path repository root
- * @returns the summary; a repository git cannot read comes back empty with `error` set
+ * @param args arguments after `git`
+ * @param timeoutMs how long a remote may take
+ * @returns standard output; rejects as `runGitOutput` does
  */
-export const readRepository = async (path: string): Promise<Repository> => (await readRepositoryState(path)).repository
+export const runActionCommand = async (path: string, args: string[], timeoutMs: number) =>
+  NETWORK_COMMANDS.has(args[0]) ? runGit(path, args, { env: await networkEnvironment(path), signal: AbortSignal.timeout(timeoutMs) }) : runGit(path, args)
+
+/**
+ * Finds a stash's current `stash@{N}` name; stashes made or dropped since the list was read shift the numbers.
+ * @param path repository root
+ * @param hash the stash commit
+ * @returns its reference now; rejects when the stash no longer exists
+ */
+export const readStashReference = async (path: string, hash: string) => {
+  const line = (await runGit(path, ["stash", "list", `--format=%gd${UNIT}%H`])).split("\n").find(candidate => candidate.endsWith(`${UNIT}${hash}`))
+  if (!line) throw new Error(`stash ${hash.slice(0, 7)} no longer exists in ${path}`)
+  return line.split(UNIT)[0]
+}
 
 /**
  * Builds the `git log` revision arguments for the view settings.
@@ -406,10 +466,19 @@ class PromiseCache<T> {
   }
 }
 
-/** Commit details kept: the 256 most recent, at most 4 M characters of paths and messages. */
-const detailsCache = new PromiseCache<CommitDetails>(256, 4 * 1024 * 1024, details => details.message.length + details.files.reduce((total, file) => total + file.path.length + (file.previousPath?.length ?? 0) + 32, 0))
-/** Commit diffs kept: the 64 most recent, at most 8 M characters of text. */
-const diffCache = new PromiseCache<string>(64, 8 * 1024 * 1024, text => text.length)
+/** Commit details and diffs kept, sized by `limits` (entries and characters); created on first use. */
+let caches: { details: PromiseCache<CommitDetails>; diffs: PromiseCache<string> } | null = null
+
+const commitCaches = () => {
+  if (!caches) {
+    const { limits } = loadConfig()
+    caches = {
+      details: new PromiseCache<CommitDetails>(limits.detailsCacheEntries, limits.detailsCacheCharacters, details => details.message.length + details.files.reduce((total, file) => total + file.path.length + (file.previousPath?.length ?? 0), 0)),
+      diffs: new PromiseCache<string>(limits.diffCacheEntries, limits.diffCacheCharacters, text => text.length),
+    }
+  }
+  return caches
+}
 
 /**
  * Reads a commit's metadata and changed files (against its first parent), or the working tree's changes.
@@ -421,10 +490,10 @@ const diffCache = new PromiseCache<string>(64, 8 * 1024 * 1024, text => text.len
  */
 export const readDetails = async (path: string, hash: string, signal?: AbortSignal): Promise<CommitDetails> => {
   if (hash === WORKING_TREE) {
-    const files = parseStatus(await runGit(path, ["status", "--porcelain=v1", "-z", "-uall"], { signal }))
+    const { files } = parseStatus(await runGit(path, ["status", "--porcelain=v2", "-z", "-uall"], { signal }))
     return { hash, parents: [], author: "", email: "", authorTime: 0, committer: "", message: "Uncommitted changes", files }
   }
-  return detailsCache.remember(`${path}\0${hash}`, () => readCommitDetails(path, hash))
+  return commitCaches().details.remember(`${path}\0${hash}`, () => readCommitDetails(path, hash))
 }
 
 const readCommitDetails = async (path: string, hash: string): Promise<CommitDetails> => {
@@ -466,19 +535,21 @@ export const readDiff = async (path: string, hash: string, file: ChangedFile, ma
     const hasHead = (await runGit(path, ["rev-parse", "--verify", "-q", "HEAD"], { acceptedExitCodes: [1], signal })).trim() !== ""
     return note(await runGitOutput(path, hasHead ? ["diff", "-M", "HEAD", "--", ...paths] : ["diff", "--cached", "--", ...paths], { signal, maxBytes }))
   }
-  return diffCache.remember(`${path}\0${hash}\0${maxKilobytes}\0${paths.join("\0")}`, async () => {
+  return commitCaches().diffs.remember(`${path}\0${hash}\0${maxKilobytes}\0${paths.join("\0")}`, async () => {
     const parent = (await readDetails(path, hash)).parents[0]
     return note(await runGitOutput(path, parent ? ["diff", "-M", parent, hash, "--", ...paths] : ["show", "--format=", "-M", hash, "--", ...paths], { maxBytes }))
   })
 }
 
-/** Reads at most `maxBytes` of a file from disk without loading the rest. */
+/** Reads at most `maxBytes` of a file from disk without loading the rest; rejects as `open` does (ENOENT, EISDIR…). */
 const readFileStart = async (file: string, maxBytes: number) => {
   const handle = await open(file, "r")
   try {
-    const buffer = Buffer.alloc(Math.min(maxBytes, (await handle.stat()).size))
+    const size = (await handle.stat()).size
+    const buffer = Buffer.alloc(Math.min(maxBytes, size))
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
-    return buffer.subarray(0, bytesRead).toString("utf8")
+    const cut = size > maxBytes
+    return { stdout: decodeText(buffer.subarray(0, bytesRead), cut), cut }
   } finally {
     await handle.close()
   }
@@ -488,13 +559,17 @@ const readFileStart = async (file: string, maxBytes: number) => {
  * Reads a whole file as it is in the working tree or in a commit.
  * @param path repository root
  * @param hash commit hash, or `WORKING_TREE` for the file on disk
- * @param file the file; a file deleted in the commit is read from its parent
+ * @param file the file; a file deleted in the commit is read from its parent, and one deleted from the disk from HEAD
  * @param maxKilobytes longer files are cut there; only that much is ever read
- * @returns the file's text
+ * @returns the text and whether it was cut; rejects with the read error for anything but a file missing from the disk
  */
-export const readWholeFile = async (path: string, hash: string, file: ChangedFile, maxKilobytes: number) => {
+export const readWholeFile = async (path: string, hash: string, file: ChangedFile, maxKilobytes: number): Promise<{ text: string; cut: boolean }> => {
   const maxBytes = maxKilobytes * 1024
-  return hash === WORKING_TREE
-    ? readFileStart(join(path, file.path), maxBytes).catch(() => runGit(path, ["show", `HEAD:${file.previousPath ?? file.path}`], { maxBytes }))
-    : runGit(path, ["show", `${file.status === "D" ? `${hash}~` : hash}:${file.path}`], { maxBytes })
+  const result = hash === WORKING_TREE
+    ? await readFileStart(join(path, file.path), maxBytes).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error
+      return runGitOutput(path, ["show", `HEAD:${file.previousPath ?? file.path}`], { maxBytes })
+    })
+    : await runGitOutput(path, ["show", `${file.status === "D" ? `${hash}~` : hash}:${file.path}`], { maxBytes })
+  return { text: result.stdout, cut: result.cut }
 }

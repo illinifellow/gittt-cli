@@ -1,8 +1,9 @@
 /**
  * Self-update: compares the running version with the latest GitHub release of
  * gittt-cli and installs a newer one in place. An npm-installed copy is
- * reinstalled from the tarball attached to the release; a linked checkout pulls and rebuilds. The
- * running gittt restarts by itself when its bundle changes on disk (`cli.tsx`).
+ * reinstalled from the tarball attached to the release; a linked checkout on its default branch pulls and
+ * rebuilds (a checkout on any other branch is left to its owner). The running gittt restarts once the
+ * install finished (`cli.tsx`).
  */
 import { execFile } from "node:child_process"
 import { existsSync, readFileSync, realpathSync } from "node:fs"
@@ -65,27 +66,42 @@ export const latestVersion = async (timeoutMs = 5000): Promise<string | null> =>
   }
 }
 
+const exec = (command: string, args: string[], cwd?: string) => new Promise<string>((resolve, reject) =>
+  execFile(command, args, { cwd, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => error ? reject(new Error(`${command} ${args.join(" ")} failed: ${stderr.trim().split("\n").slice(-2).join(" ") || error.message}`)) : resolve(stdout.trim())))
+
+/** @returns whether the running package is a git checkout (installed with `npm link`) rather than an npm install */
+export const isCheckout = () => existsSync(join(packageRoot(), ".git"))
+
 /**
- * Checks whether a newer release than the running one exists.
- * @returns the newer version, or null when the running one is current or the check failed
+ * @param root the checkout
+ * @returns whether it is on its remote's default branch, the one releases are cut from; a checkout on another branch
+ *   never changes version by pulling, so it is offered no update
+ */
+const onReleaseBranch = async (root: string) => {
+  const [current, remoteDefault] = await Promise.all([exec("git", ["branch", "--show-current"], root), exec("git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root)]).catch(() => ["", ""])
+  return current !== "" && remoteDefault === `origin/${current}`
+}
+
+/**
+ * Checks whether a newer release than the running one exists and can be installed here.
+ * @returns the newer version, or null when the running one is current, the check failed, or a checkout is off its
+ *   default branch
  */
 export const availableUpdate = async (): Promise<string | null> => {
   const latest = await latestVersion()
-  return latest && compareVersions(latest, currentVersion()) > 0 ? latest : null
+  if (!latest || compareVersions(latest, currentVersion()) <= 0) return null
+  return !isCheckout() || await onReleaseBranch(packageRoot()) ? latest : null
 }
 
-const exec = (command: string, args: string[], cwd?: string) => new Promise<void>((resolve, reject) =>
-  execFile(command, args, { cwd, maxBuffer: 16 * 1024 * 1024 }, (error, _stdout, stderr) => error ? reject(new Error(`${command} ${args.join(" ")} failed: ${stderr.trim().split("\n").slice(-2).join(" ") || error.message}`)) : resolve()))
-
 /**
- * Installs the given release over the running copy, into the npm prefix it lives in. The bundle changes on disk,
- * which makes the running gittt restart itself with the same folder.
+ * Installs the given release over the running copy, into the npm prefix it lives in; the caller restarts gittt once
+ * it resolved.
  * @param version the release to install, as returned by `availableUpdate`
  * @returns resolves when the new build is on disk; rejects with the failing command and its last error lines
  */
 export const installUpdate = async (version: string) => {
   const root = packageRoot()
-  if (existsSync(join(root, ".git"))) {
+  if (isCheckout()) {
     await exec("git", ["pull", "--ff-only"], root)
     await exec("npm", ["install", "--no-audit", "--no-fund"], root)
     await exec("node", ["build.mjs"], root)

@@ -48,3 +48,12 @@ export const parseDiff = (text: string): ParsedDiff => {
  * @returns how many prefix columns each hunk line carries: 2 for combined conflict diffs, else 1
  */
 export const prefixWidth = (diff: ParsedDiff) => diff.combined ? 2 : 1
+
+/** A line git writes around conflicting changes: `<<<<<<<`, `|||||||`, `=======` or `>>>>>>>`, alone or before a label. */
+const CONFLICT_MARKER = /^(<{7}|\|{7}|={7}|>{7})( |$)/m
+
+/**
+ * @param text a file's text
+ * @returns whether it still holds a conflict marker line, so marking it resolved would commit the markers
+ */
+export const hasConflictMarkers = (text: string) => CONFLICT_MARKER.test(text)

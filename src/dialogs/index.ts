@@ -1,8 +1,10 @@
 /**
  * Action dialogs as data: for every action, the fields its dialog shows
- * (built from the repository's state and what was clicked) and the git commands
- * the submitted values turn into.
+ * (built from the repository's state and what was clicked), the checks typed
+ * values must pass before anything runs, and the git commands the submitted
+ * values turn into.
  */
+import { splitRemoteRef } from "@/git"
 import type { Repository } from "@/protocol"
 
 /** One option of a select or radio field. */
@@ -22,8 +24,10 @@ interface ChecklistItem {
 /** One control in a dialog. */
 export type Field =
   | { type: "info"; label: string; text: string }
-  | { type: "text"; key: string; label: string; value: string; placeholder?: string; required?: boolean }
-  | { type: "select"; key: string; label: string; value: string; choices: Choice[] }
+  /** `check`: `refName` must be a valid branch or tag name, `revision` must not read as an option. */
+  | { type: "text"; key: string; label: string; value: string; placeholder?: string; required?: boolean; check?: "refName" | "revision" }
+  /** `dependsOn`: the choices follow another field's value (a remote's branches follow the remote); `choices` are those for its initial value. */
+  | { type: "select"; key: string; label: string; value: string; choices: Choice[]; dependsOn?: { key: string; choices: Record<string, Choice[]> } }
   | { type: "radio"; key: string; label: string; value: string; choices: Choice[] }
   | { type: "checkbox"; key: string; label: string; value: boolean; warning?: string }
   | { type: "checklist"; key: string; label: string; items: ChecklistItem[] }
@@ -63,10 +67,47 @@ export interface DialogTarget {
 /** Values the user submitted, keyed by field key. */
 export type DialogValues = Record<string, string | boolean | string[]>
 
+/**
+ * Checks a branch or tag name by the rules of `git check-ref-format --branch`; a leading `-` is refused for tags too,
+ * since git would read it as an option.
+ * @param name the typed name
+ * @returns whether git accepts it as a branch or tag name
+ */
+export const isValidRefName = (name: string) =>
+  name !== "@" && !name.startsWith("-") && !name.endsWith(".") && !name.includes("..") && !name.includes("@{") && !/[\x00-\x20\x7f~^:?*[\\]/.test(name)
+  && name.split("/").every(part => part !== "" && !part.startsWith(".") && !part.endsWith(".lock"))
+
+/**
+ * @param field a select field
+ * @param values the dialog's current values
+ * @returns the choices it offers now: those of the field it depends on, or its own
+ */
+export const choicesOf = (field: Extract<Field, { type: "select" }>, values: DialogValues) =>
+  field.dependsOn ? field.dependsOn.choices[String(values[field.dependsOn.key])] ?? [] : field.choices
+
+/**
+ * Keeps dependent selects valid after a value changed: a select whose value is no longer offered takes the offered
+ * value of the same name, else the first one.
+ * @param spec the dialog
+ * @param values values after the change
+ * @returns the values with every dependent select pointing at a choice it offers (empty when it offers none)
+ */
+export const settleValues = (spec: DialogSpec, values: DialogValues): DialogValues => {
+  const settled = { ...values }
+  for (const field of spec.fields) {
+    if (field.type !== "select" || !field.dependsOn) continue
+    const choices = choicesOf(field, settled)
+    if (!choices.some(choice => choice.value === settled[field.key])) settled[field.key] = (choices.find(choice => choice.value === field.value) ?? choices[0])?.value ?? ""
+  }
+  return settled
+}
+
 const short = (hash: string | undefined) => hash ? hash.slice(0, 7) : "HEAD"
 const currentBranch = (repository: Repository) => repository.branches.find(branch => branch.current) ?? null
 const remoteChoices = (repository: Repository): Choice[] => repository.remotes.map(remote => ({ value: remote.name, label: remote.name }))
 const preferredRemote = (repository: Repository) => repository.remotes.find(remote => remote.name === "origin")?.name ?? repository.remotes[0]?.name ?? ""
+const remoteNames = (repository: Repository) => repository.remotes.map(remote => remote.name)
+const branchChoices = (repository: Repository, remote: string): Choice[] => (repository.remotes.find(candidate => candidate.name === remote)?.branches ?? []).map(branch => ({ value: branch.name, label: branch.name }))
 const headLabel = (repository: Repository) => repository.head.branch ?? `${short(repository.head.hash ?? undefined)} (detached HEAD)`
 const allRefs = (repository: Repository): Choice[] => [
   ...repository.branches.map(branch => ({ value: branch.name, label: branch.name })),
@@ -103,12 +144,12 @@ export const buildDialog = (kind: DialogKind, repository: Repository, target: Di
         { type: "checkbox", key: "tags", label: "Fetch and store all tags locally", value: true },
       ] }
     case "pull": {
-      const upstream = current?.upstream ?? ""
-      const upstreamRemote = upstream.split("/")[0] || remote
-      const remoteBranches = repository.remotes.find(candidate => candidate.name === upstreamRemote)?.branches ?? []
+      const upstream = current?.upstream ? splitRemoteRef(current.upstream, remoteNames(repository)) : null
+      const pullRemote = upstream?.remote ?? remote
+      const byRemote = Object.fromEntries(repository.remotes.map(candidate => [candidate.name, branchChoices(repository, candidate.name)]))
       return { kind, title: "Pull", submit: "OK", fields: [
-        { type: "select", key: "remote", label: "Pull from repository", value: upstreamRemote, choices: remoteChoices(repository) },
-        { type: "select", key: "branch", label: "Remote branch to pull", value: upstream ? upstream.slice(upstreamRemote.length + 1) : current?.name ?? "", choices: remoteBranches.map(branch => ({ value: branch.name, label: branch.name })) },
+        { type: "select", key: "remote", label: "Pull from repository", value: pullRemote, choices: remoteChoices(repository) },
+        { type: "select", key: "branch", label: "Remote branch to pull", value: upstream?.branch ?? current?.name ?? "", choices: byRemote[pullRemote] ?? [], dependsOn: { key: "remote", choices: byRemote } },
         { type: "info", label: "Pull into local branch", text: headLabel(repository) },
         { type: "checkbox", key: "commit", label: "Commit merged changes immediately", value: true },
         { type: "checkbox", key: "log", label: "Include messages from commits being merged in merge commit", value: false },
@@ -118,7 +159,7 @@ export const buildDialog = (kind: DialogKind, repository: Repository, target: Di
     }
     case "push":
       return { kind, title: "Push", submit: "OK", fields: [
-        { type: "select", key: "remote", label: "Push to repository", value: remote, choices: remoteChoices(repository) },
+        { type: "select", key: "remote", label: "Push to repository", value: (current?.upstream ? splitRemoteRef(current.upstream, remoteNames(repository))?.remote : undefined) ?? remote, choices: remoteChoices(repository) },
         { type: "checklist", key: "branches", label: "Branches to push", items: repository.branches.map(branch => ({
           value: branch.name,
           label: branch.name,
@@ -127,14 +168,14 @@ export const buildDialog = (kind: DialogKind, repository: Repository, target: Di
         })) },
         { type: "checkbox", key: "track", label: "Track pushed branches that have no upstream", value: true },
         { type: "checkbox", key: "tags", label: "Push all tags", value: false },
-        { type: "checkbox", key: "force", label: "Force push", value: false, warning: "Overwrites commits on the remote; --force-with-lease protects work pushed by others since your last fetch" },
+        { type: "checkbox", key: "force", label: "Force push", value: false, warning: "Overwrites commits on the remote; refused when it holds commits you have not seen in your local branch" },
       ] }
     case "branch":
       return { kind, title: "New Branch", submit: "Create Branch", fields: [
         { type: "info", label: "Current branch", text: headLabel(repository) },
-        { type: "text", key: "name", label: "New branch", value: "", placeholder: "feature/name", required: true },
+        { type: "text", key: "name", label: "New branch", value: "", placeholder: "feature/name", required: true, check: "refName" },
         { type: "radio", key: "start", label: "Commit", value: target.hash || target.ref ? "specified" : "head", choices: [{ value: "head", label: "Working copy parent" }, { value: "specified", label: "Specified commit" }] },
-        { type: "text", key: "commit", label: "Specified commit", value: target.ref ?? target.hash ?? "", placeholder: "hash or ref" },
+        { type: "text", key: "commit", label: "Specified commit", value: target.ref ?? target.hash ?? "", placeholder: "hash or ref", check: "revision" },
         { type: "checkbox", key: "checkout", label: "Checkout new branch", value: true },
       ] }
     case "deleteBranches":
@@ -163,9 +204,9 @@ export const buildDialog = (kind: DialogKind, repository: Repository, target: Di
       ] }
     case "tag":
       return { kind, title: "Add Tag", submit: "Add", fields: [
-        { type: "text", key: "name", label: "Tag Name", value: "", placeholder: "v1.0.0", required: true },
+        { type: "text", key: "name", label: "Tag Name", value: "", placeholder: "v1.0.0", required: true, check: "refName" },
         { type: "radio", key: "start", label: "Commit", value: target.hash ? "specified" : "head", choices: [{ value: "head", label: "Working copy parent" }, { value: "specified", label: "Specified commit" }] },
-        { type: "text", key: "commit", label: "Specified commit", value: target.hash ?? "", placeholder: "hash or ref" },
+        { type: "text", key: "commit", label: "Specified commit", value: target.hash ?? "", placeholder: "hash or ref", check: "revision" },
         { type: "checkbox", key: "push", label: `Push tag${remote ? ` to ${remote}` : ""}`, value: false },
         { type: "checkbox", key: "lightweight", label: "Lightweight tag (not recommended)", value: false },
         { type: "text", key: "message", label: "Message", value: "", placeholder: "annotation" },
@@ -178,11 +219,10 @@ export const buildDialog = (kind: DialogKind, repository: Repository, target: Di
         : [{ type: "info", label: "Commit", text: `${short(target.hash ?? target.ref)} ${target.subject ?? target.ref ?? ""}` }, { type: "warning", text: "Checking out a commit leaves HEAD detached: new commits belong to no branch until you create one." }, { type: "checkbox", key: "detach", label: "Detach HEAD", value: true }] }
     }
     case "checkoutRemote": {
-      const remoteName = repository.remotes.find(group => target.ref?.startsWith(`${group.name}/`))?.name ?? remote
-      const localName = target.ref ? target.ref.slice(remoteName.length + 1) : ""
+      const localName = target.ref ? splitRemoteRef(target.ref, remoteNames(repository))?.branch ?? target.ref : ""
       return { kind, title: "Checkout New Branch", submit: "OK", fields: [
         { type: "info", label: "Checkout remote branch", text: target.ref ?? "" },
-        { type: "text", key: "name", label: "New local branch name", value: localName, required: true },
+        { type: "text", key: "name", label: "New local branch name", value: localName, required: true, check: "refName" },
         { type: "checkbox", key: "track", label: "Local branch should track remote branch", value: true },
       ] }
     }
@@ -200,7 +240,7 @@ export const buildDialog = (kind: DialogKind, repository: Repository, target: Di
     case "renameBranch":
       return { kind, title: "Rename Branch", submit: "Rename", fields: [
         { type: "info", label: "Branch", text: targetName },
-        { type: "text", key: "name", label: "New name", value: target.ref ?? "", required: true },
+        { type: "text", key: "name", label: "New name", value: target.ref ?? "", required: true, check: "refName" },
       ] }
     case "reset":
       return { kind, title: "Reset to Commit", submit: "OK", danger: true, fields: [
@@ -266,8 +306,17 @@ export const validateDialog = (spec: DialogSpec, values: DialogValues, repositor
     if (repository && repository.staged === 0) return "Stage at least one file: tick its checkbox in the file list"
   }
   for (const field of spec.fields) {
-    if (field.type === "text" && field.required && !text(values, field.key)) return `${field.label} is required`
-    if (field.type === "text" && field.required && /\s/.test(text(values, field.key)) && spec.kind !== "stash") return `${field.label} holds no spaces`
+    if (field.type === "text") {
+      const value = text(values, field.key)
+      if (field.required && !value) return `${field.label} is required`
+      if (field.check === "refName" && value && !isValidRefName(value)) return `${field.label} is no valid name: no spaces or ~ ^ : ? * [ \\, no leading - or ., no .., no trailing . or .lock`
+      if (field.check === "revision" && value.startsWith("-")) return `${field.label} cannot start with -`
+    }
+    if (field.type === "select") {
+      const choices = choicesOf(field, values)
+      if (!choices.length) return `${field.label}: nothing to choose from`
+      if (!choices.some(choice => choice.value === values[field.key])) return `${field.label}: choose one of the listed values`
+    }
   }
   if ((spec.kind === "branch" || spec.kind === "tag") && values.start === "specified" && !text(values, "commit")) return "Specified commit is empty"
   if ((spec.kind === "push" || spec.kind === "deleteBranches") && !list(values, "branches").length && !flag(values, "tags")) return "Select at least one branch"
@@ -280,11 +329,16 @@ export const validateDialog = (spec: DialogSpec, values: DialogValues, repositor
  * @param values submitted values
  * @param repository the repository, for upstreams and remotes
  * @param target what the dialog was opened on
- * @returns argument lists for `git`
+ * @returns argument lists for `git`; a merge that does not commit at once never fast-forwards either, so the branch
+ *   stays where it is until the user commits, and a force push is refused when the remote holds commits the local
+ *   branch never saw (`--force-if-includes`), even after gittt fetched them in the background
  */
 export const dialogCommands = (spec: DialogSpec, values: DialogValues, repository: Repository, target: DialogTarget): string[][] => {
   const remote = text(values, "remote") || preferredRemote(repository)
-  const mergeOptions = [...(flag(values, "commit") ? [] : ["--no-commit"]), ...(flag(values, "log") ? ["--log"] : []), ...(flag(values, "noFastForward") ? ["--no-ff"] : [])]
+  const names = remoteNames(repository)
+  const deferred = !flag(values, "commit")
+  const mergeOptions = [...(deferred ? ["--no-commit"] : []), ...(flag(values, "log") ? ["--log"] : []), ...(deferred || flag(values, "noFastForward") ? ["--no-ff"] : [])]
+  const forcePush = ["--force-with-lease", "--force-if-includes"]
   switch (spec.kind) {
     case "settings":
       return []
@@ -294,7 +348,7 @@ export const dialogCommands = (spec: DialogSpec, values: DialogValues, repositor
       if (!flag(values, "push")) return [commit]
       const branch = repository.branches.find(candidate => candidate.current)
       if (!branch) return [commit]
-      return [commit, branch.upstream ? ["push", ...(flag(values, "amend") ? ["--force-with-lease"] : [])] : ["push", "--set-upstream", remote, branch.name]]
+      return [commit, branch.upstream ? ["push", ...(flag(values, "amend") ? forcePush : [])] : ["push", "--set-upstream", remote, branch.name]]
     }
     case "fetch":
       return [["fetch", ...(flag(values, "all") ? ["--all"] : [remote]), ...(flag(values, "prune") ? ["--prune"] : []), ...(flag(values, "tags") ? ["--tags"] : [])]]
@@ -304,8 +358,8 @@ export const dialogCommands = (spec: DialogSpec, values: DialogValues, repositor
       const branches = list(values, "branches")
       const commands = branches.map(name => {
         const branch = repository.branches.find(candidate => candidate.name === name)
-        const upstream = branch?.upstream && branch.upstream.startsWith(`${remote}/`) ? branch.upstream.slice(remote.length + 1) : name
-        return ["push", ...(flag(values, "force") ? ["--force-with-lease"] : []), ...(!branch?.upstream && flag(values, "track") ? ["--set-upstream"] : []), remote, `${name}:${upstream}`]
+        const upstream = branch?.upstream ? splitRemoteRef(branch.upstream, names) : null
+        return ["push", ...(flag(values, "force") ? forcePush : []), ...(!branch?.upstream && flag(values, "track") ? ["--set-upstream"] : []), remote, `${name}:${upstream?.remote === remote ? upstream.branch : name}`]
       })
       return flag(values, "tags") ? [...commands, ["push", remote, "--tags"]] : commands
     }
@@ -315,8 +369,8 @@ export const dialogCommands = (spec: DialogSpec, values: DialogValues, repositor
     }
     case "deleteBranches":
       return list(values, "branches").map(name => {
-        const group = repository.remotes.find(candidate => name.startsWith(`${candidate.name}/`) && repository.branches.every(branch => branch.name !== name))
-        return group ? ["push", group.name, "--delete", name.slice(group.name.length + 1)] : ["branch", flag(values, "force") ? "-D" : "-d", name]
+        const remoteBranch = repository.branches.some(branch => branch.name === name) ? null : splitRemoteRef(name, names)
+        return remoteBranch ? ["push", remoteBranch.remote, "--delete", remoteBranch.branch] : ["branch", flag(values, "force") ? "-D" : "-d", name]
       })
     case "merge":
       return flag(values, "rebase") ? [["rebase", text(values, "ref")]] : [["merge", "--no-edit", ...mergeOptions, text(values, "ref")]]
@@ -338,10 +392,9 @@ export const dialogCommands = (spec: DialogSpec, values: DialogValues, repositor
     }
     case "deleteBranch": {
       const branch = repository.branches.find(candidate => candidate.name === target.ref)
-      const upstream = branch?.upstream
-      const upstreamRemote = upstream ? repository.remotes.find(group => upstream.startsWith(`${group.name}/`))?.name : undefined
+      const upstream = branch?.upstream ? splitRemoteRef(branch.upstream, names) : null
       const commands = [["branch", flag(values, "force") ? "-D" : "-d", target.ref ?? ""]]
-      return flag(values, "remote") && upstream && upstreamRemote ? [...commands, ["push", upstreamRemote, "--delete", upstream.slice(upstreamRemote.length + 1)]] : commands
+      return flag(values, "remote") && upstream ? [...commands, ["push", upstream.remote, "--delete", upstream.branch]] : commands
     }
     case "deleteTag":
       return [["tag", "-d", target.ref ?? ""], ...(flag(values, "remote") ? repository.remotes.map(group => ["push", group.name, "--delete", `refs/tags/${target.ref}`]) : [])]

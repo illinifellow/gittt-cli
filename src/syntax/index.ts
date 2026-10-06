@@ -1,7 +1,8 @@
 /**
- * Finds the VS Code color theme the user runs (from VS Code's own settings and
- * installed extensions, no VS Code API needed) so the terminal highlights diffs
- * with the editor's colours; falls back to Dark+.
+ * Finds the VS Code color theme the user runs (from the settings and installed
+ * extensions of VS Code, its Insiders build, VSCodium or Cursor, no editor API
+ * needed) so the terminal highlights diffs with the editor's colours; falls back
+ * to Dark+.
  */
 import { existsSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
@@ -26,16 +27,34 @@ const SHORTHAND_SCOPES: Record<string, string[]> = {
   variables: ["variable", "entity.name.variable"],
 }
 
-const userSettingsPath = () => {
-  if (platform() === "darwin") return join(homedir(), "Library", "Application Support", "Code", "User", "settings.json")
-  if (platform() === "win32") return join(process.env.APPDATA ?? "", "Code", "User", "settings.json")
-  return join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "Code", "User", "settings.json")
+/** Editors that share VS Code's settings and theme format: their folder under the user's config folder, and their extensions folder. */
+const EDITORS = [
+  { config: "Code", extensions: ".vscode" },
+  { config: "Code - Insiders", extensions: ".vscode-insiders" },
+  { config: "VSCodium", extensions: ".vscode-oss" },
+  { config: "Cursor", extensions: ".cursor" },
+]
+
+/** @returns the folder that holds each editor's `User/settings.json` on this system */
+const configRoot = () => {
+  if (platform() === "darwin") return join(homedir(), "Library", "Application Support")
+  if (platform() === "win32") return process.env.APPDATA ?? join(homedir(), "AppData", "Roaming")
+  return process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config")
 }
 
+/** Settings files to look in, in order: each editor's, then the Flatpak build of VS Code's. */
+const SETTINGS_PATHS = [
+  ...EDITORS.map(editor => join(configRoot(), editor.config, "User", "settings.json")),
+  join(homedir(), ".var", "app", "com.visualstudio.code", "config", "Code", "User", "settings.json"),
+]
+
+/** Folders holding themes: each editor's extensions, then the built-in themes of the usual installs (macOS, Linux packages, Snap, Windows). */
 const EXTENSION_ROOTS = [
-  join(homedir(), ".vscode", "extensions"),
+  ...EDITORS.map(editor => join(homedir(), editor.extensions, "extensions")),
   "/Applications/Visual Studio Code.app/Contents/Resources/app/extensions",
   "/usr/share/code/resources/app/extensions",
+  "/snap/code/current/usr/share/code/resources/app/extensions",
+  join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "Programs", "Microsoft VS Code", "resources", "app", "extensions"),
 ]
 
 const readJson = async <Shape>(path: string) => parse(await readFile(path, "utf8"), [], { allowTrailingComma: true }) as Shape
@@ -79,9 +98,10 @@ export const readSyntaxTheme = async (name: string): Promise<ThemeRegistrationAn
   return readEditorTheme()
 }
 
-/** @returns the VS Code theme in use with the user's token colour customizations, or Dark+ when VS Code is absent */
+/** @returns the editor theme in use with the user's token colour customizations, or Dark+ when no editor is found */
 const readEditorTheme = async (): Promise<ThemeRegistrationAny> => {
-  const settings = await readJson<Record<string, unknown>>(userSettingsPath()).catch(() => ({} as Record<string, unknown>))
+  const settingsPath = SETTINGS_PATHS.find(path => existsSync(path))
+  const settings = settingsPath ? await readJson<Record<string, unknown>>(settingsPath).catch(() => ({} as Record<string, unknown>)) : {}
   const name = String(settings["workbench.colorTheme"] ?? "")
   const path = name ? await findThemePath(name) : null
   const theme = path ? await loadThemeFile(path).catch(() => null) : null

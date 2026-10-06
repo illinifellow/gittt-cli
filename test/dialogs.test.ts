@@ -1,27 +1,31 @@
 /**
  * Dialogs against a real repository with a remote: the values each dialog
  * starts with and the git commands its answers become. Catches an option that
- * silently does nothing, commands aimed at the wrong branch or remote, and
- * validation that lets empty names through.
+ * silently does nothing, commands aimed at the wrong branch or remote, validation
+ * that lets empty names or option-like names through, a branch list that does
+ * not follow its remote, a deferred merge that fast-forwards, and force pushes
+ * that the background fetch makes unsafe.
  */
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { buildDialog, dialogCommands, initialValues, validateDialog, type DialogKind, type DialogTarget, type DialogValues } from "@/dialogs"
-import { readDetails, readOperation, readRepository, runGit } from "@/git"
-import { WORKING_TREE } from "@/protocol"
+import { buildDialog, dialogCommands, initialValues, isValidRefName, settleValues, validateDialog, type DialogKind, type DialogTarget, type DialogValues } from "@/dialogs"
+import { readDetails, readOperation, readRepositoryState, runGit } from "@/git"
+import { WORKING_TREE, type Repository } from "@/protocol"
+import { dialogKey, openDialogState } from "@/ui/dialog"
+import type { Key } from "ink"
 
 Object.assign(process.env, { GIT_AUTHOR_NAME: "Ada", GIT_AUTHOR_EMAIL: "ada@example.com", GIT_COMMITTER_NAME: "Ada", GIT_COMMITTER_EMAIL: "ada@example.com" })
 
 let root: string
 let repository: string
 let remote: string
-const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "Ada", GIT_AUTHOR_EMAIL: "ada@example.com", GIT_COMMITTER_NAME: "Ada", GIT_COMMITTER_EMAIL: "ada@example.com" } })
+const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_AUTHOR_NAME: "Ada", GIT_AUTHOR_EMAIL: "ada@example.com", GIT_COMMITTER_NAME: "Ada", GIT_COMMITTER_EMAIL: "ada@example.com" } })
 
 const submit = async (kind: DialogKind, target: DialogTarget, change: DialogValues) => {
-  const summary = await readRepository(repository)
+  const summary = (await readRepositoryState(repository)).repository
   const spec = buildDialog(kind, summary, target)
   const values = { ...initialValues(spec), ...change }
   const problem = validateDialog(spec, values, summary)
@@ -144,12 +148,88 @@ describe("dialogs", () => {
     writeFileSync(join(repository, "a.txt"), "right\n")
     git(repository, "commit", "-q", "-am", "right")
     expect(() => git(repository, "merge", "left")).toThrow()
-    const summary = await readRepository(repository)
+    const summary = (await readRepositoryState(repository)).repository
     expect(summary.operation?.kind).toBe("merge")
     expect(summary.conflicts).toBe(1)
     git(repository, "merge", "--abort")
     expect(() => git(repository, "rebase", "left")).toThrow()
     expect(await readOperation(git(repository, "rev-parse", "--absolute-git-dir").trim())).toMatchObject({ kind: "rebase", branch: "right", step: 1, total: 1 })
     git(repository, "rebase", "--abort")
+  })
+})
+
+/** A summary of a repository with two remotes, one of them named with a slash, for command-building checks. */
+const SUMMARY: Repository = {
+  path: "/work/app",
+  name: "app",
+  head: { branch: "main", hash: "a1" },
+  changes: 0,
+  staged: 0,
+  conflicts: 0,
+  operation: null,
+  branches: [{ name: "main", hash: "a1", upstream: "team/fork/main", current: true, ahead: 1, behind: 0, gone: false }],
+  remotes: [
+    { name: "origin", branches: [{ remote: "origin", name: "release", hash: "b2" }] },
+    { name: "team/fork", branches: [{ remote: "team/fork", name: "main", hash: "a1" }, { remote: "team/fork", name: "topic", hash: "c3" }] },
+  ],
+  tags: [],
+  stashes: [],
+  error: null,
+}
+
+/** Builds a dialog on SUMMARY, applies key-free value changes the way the dialog does, and returns the spec and values. */
+const answer = (kind: DialogKind, target: DialogTarget, change: DialogValues) => {
+  const spec = buildDialog(kind, SUMMARY, target)
+  return { spec, values: settleValues(spec, { ...initialValues(spec), ...change }) }
+}
+
+describe("dialog safety", () => {
+  /** A branch named `-D` from commit `main` used to become `git branch -D main` and delete main. */
+  it("refuses names git would read as options or reject", () => {
+    for (const name of ["-D", "a b", "x..y", "x.lock", ".hidden", "x:y", "x~1", "a//b", "end/", "@"]) {
+      const { spec, values } = answer("branch", { hash: "a1" }, { name, checkout: false })
+      expect(validateDialog(spec, values, SUMMARY), name).toMatch(/New branch is no valid name/)
+    }
+    const tag = answer("tag", {}, { name: "-f" })
+    expect(validateDialog(tag.spec, tag.values, SUMMARY)).toMatch(/Tag Name is no valid name/)
+    const start = answer("branch", {}, { name: "ok", start: "specified", commit: "--orphan" })
+    expect(validateDialog(start.spec, start.values, SUMMARY)).toBe("Specified commit cannot start with -")
+    expect(isValidRefName("feature/topic-1")).toBe(true)
+  })
+
+  /** Changing Pull's remote used to keep the first remote's branch, pulling a branch the chosen remote does not have. */
+  it("follows the chosen remote in Pull's branch list", () => {
+    const initial = answer("pull", {}, {})
+    expect(initial.values).toMatchObject({ remote: "team/fork", branch: "main" })
+    const switched = answer("pull", {}, { remote: "origin" })
+    expect(switched.values.branch).toBe("release")
+    expect(dialogCommands(switched.spec, switched.values, SUMMARY, {})).toEqual([["pull", "--no-rebase", "--no-edit", "origin", "release"]])
+    expect(validateDialog(switched.spec, { ...switched.values, branch: "main" }, SUMMARY)).toBe("Remote branch to pull: choose one of the listed values")
+  })
+
+  /** Choosing another remote with the keyboard moves the branch to one that remote has. */
+  it("updates Pull's branch when the remote is changed by key", () => {
+    const state = openDialogState(SUMMARY.path, buildDialog("pull", SUMMARY, {}), {})
+    const next = dialogKey(state, "", { rightArrow: true } as Key)
+    expect("values" in next && next.values).toMatchObject({ remote: "origin", branch: "release" })
+  })
+
+  /** "Commit merged changes immediately" off used to let a fast-forward move the branch at once anyway. */
+  it("never fast-forwards a merge that does not commit at once", () => {
+    const { spec, values } = answer("merge", { ref: "team/fork/topic" }, { commit: false })
+    expect(dialogCommands(spec, values, SUMMARY, { ref: "team/fork/topic" })).toEqual([["merge", "--no-edit", "--no-commit", "--no-ff", "team/fork/topic"]])
+  })
+
+  /** gittt's background fetch updates the lease's reference, so a bare lease no longer protects others' pushes. */
+  it("forces pushes only with the lease and include check", () => {
+    const { spec, values } = answer("push", {}, { force: true })
+    expect(dialogCommands(spec, values, SUMMARY, {})).toEqual([["push", "--force-with-lease", "--force-if-includes", "team/fork", "main:main"]])
+  })
+
+  /** Remote names may hold a slash: deleting `team/fork/topic` deletes `topic` on `team/fork`. */
+  it("splits remote branches at the right remote", () => {
+    const { spec, values } = answer("deleteBranches", {}, { branches: ["team/fork/topic"] })
+    expect(dialogCommands(spec, values, SUMMARY, {})).toEqual([["push", "team/fork", "--delete", "topic"]])
+    expect(initialValues(buildDialog("checkoutRemote", SUMMARY, { ref: "team/fork/topic", section: "remote" })).name).toBe("topic")
   })
 })

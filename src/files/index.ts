@@ -12,16 +12,16 @@ export type FileRow =
   | { kind: "folder"; depth: number; name: string }
   | { kind: "file"; depth: number; name: string; folder: string; file: ChangedFile }
 
-/** Status letter, glyph, tone and word for each git status. */
-export const FILE_STATUSES: Record<string, { glyph: string; tone: "added" | "modified" | "deleted" | "renamed" | "conflicted" | "untracked"; title: string }> = {
-  A: { glyph: "+", tone: "added", title: "Added" },
-  M: { glyph: "●", tone: "modified", title: "Modified" },
-  D: { glyph: "−", tone: "deleted", title: "Deleted" },
-  R: { glyph: "→", tone: "renamed", title: "Renamed" },
-  C: { glyph: "→", tone: "renamed", title: "Copied" },
-  T: { glyph: "●", tone: "modified", title: "Type changed" },
-  U: { glyph: "⚠", tone: "conflicted", title: "Conflicted" },
-  "?": { glyph: "?", tone: "untracked", title: "Untracked" },
+/** The colour tone, and the status glyph of the same name, each git status letter is drawn in. */
+export const FILE_TONES: Record<string, "added" | "modified" | "deleted" | "renamed" | "conflicted" | "untracked"> = {
+  A: "added",
+  M: "modified",
+  D: "deleted",
+  R: "renamed",
+  C: "renamed",
+  T: "modified",
+  U: "conflicted",
+  "?": "untracked",
 }
 
 const STATUS_ORDER = "UMADRCT?"

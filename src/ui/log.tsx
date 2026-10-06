@@ -33,7 +33,7 @@ export const badgeGlyph = (badge: Badge, glyphs: GlyphTokens) => `${{ branch: gl
  * @param palette colours
  * @returns its colour: the current branch, other branches, remotes, tags, HEAD and states each their own token
  */
-export const badgeColor = (badge: Badge, palette: Palette) => ({ branch: badge.current ? palette.currentBranch : palette.branch, remote: palette.remote, tag: palette.tag, head: palette.stash, operation: palette.tag, conflict: palette.stash })[badge.kind]
+export const badgeColor = (badge: Badge, palette: Palette) => ({ branch: badge.current ? palette.currentBranch : palette.branch, remote: palette.remote, tag: palette.tag, head: palette.danger, operation: palette.tag, conflict: palette.danger })[badge.kind]
 
 /**
  * @param part a piece of a commit message
