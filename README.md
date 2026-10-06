@@ -154,7 +154,7 @@ The two are merged on start. Toggles and drags in the app write the user file; i
 
 ### Themes
 
-<img data-cover alt="The same screen in the light milk-and-honey theme" src="https://github.com/user-attachments/assets/d3186946-4935-45b7-bee9-d481b50db0c3" />
+![The same screen in the light milk-and-honey theme](https://github.com/user-attachments/assets/d3186946-4935-45b7-bee9-d481b50db0c3)
 
 Two themes ship: **golden-brown** (dark, warm orange on brown-tinted grounds) and **milk-and-honey** (light, warm milky grounds with an amber accent). `settings.theme` is `auto` by default: gittt asks the terminal for its background and picks milk-and-honey on a light one and golden-brown otherwise. golden-brown is drawn on the terminal's own background (its `background` is `transparent`); milk-and-honey paints its milky ground so it stays readable on any terminal. Each theme names its code highlighting in `syntax`: `vscode` for the editor's theme, or a bundled theme such as `light-plus`. A theme of your own is another entry under `themes`; anything it leaves out comes from the shipped themes.
 
@@ -180,3 +180,5 @@ Every change starts as an issue, a [bug report](https://github.com/illinifellow/
 ## License
 
 [MIT](LICENSE)
+
+<img data-cover alt="gittt as an isometric line drawing: a terminal and keyboard, the commit graph on the screen with one branch drawn heavier" src="docs/cover.png" />
