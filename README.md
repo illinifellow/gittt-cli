@@ -6,6 +6,8 @@
 **A git browser for the terminal.** Every repository under a folder in one sidebar, a commit graph, changed files and highlighted diffs, a dialog for every action, and full mouse support.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/illinifellow/gittt-cli/ci.yml?label=CI)](https://github.com/illinifellow/gittt-cli/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/illinifellow/gittt-cli/badges/tests.json)](https://github.com/illinifellow/gittt-cli/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/illinifellow/gittt-cli/badges/coverage.json)](https://github.com/illinifellow/gittt-cli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-ff905c)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.15-88bd66)](https://nodejs.org)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-ffdd04?logo=buymeacoffee&logoColor=000)](https://buymeacoffee.com/illinifellow)
@@ -168,7 +170,8 @@ They merge on start; the app writes only changed values, atomically. Hand edits 
 npm install
 npm run build       # dist/app.js and the dist/cli.js launcher
 npm run typecheck
-npm test            # graph, dialogs, settings, input and text layout, the store and the git layer against real repositories, the main screen
+npm test            # every module, the git layer and the main screen against real repositories, gittt itself in a pseudo-terminal
+npm run coverage    # the same run with line coverage, as CI measures it for the badge
 ```
 
 In a checkout, `gittt` restarts in place when `dist/app.js` changes.

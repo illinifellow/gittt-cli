@@ -80,7 +80,8 @@ const restart = () => {
   instance.unmount()
 }
 
-const instance = render(<Root initial={folder ?? resolve(process.argv[2] ?? process.cwd())} resumed={Boolean(folder)} onRestart={restart} />, { exitOnCtrlC: true, stdin: keyboard as unknown as NodeJS.ReadStream })
+/** A terminal gets every frame, even where a `CI` variable would make ink print only the last one. */
+const instance = render(<Root initial={folder ?? resolve(process.argv[2] ?? process.cwd())} resumed={Boolean(folder)} onRestart={restart} />, { exitOnCtrlC: true, stdin: keyboard as unknown as NodeJS.ReadStream, interactive: Boolean(process.stdout.isTTY) })
 
 /** An error nothing caught: the screen goes, the terminal comes back, and the error is printed where it stays readable. */
 const crash = (error: unknown) => {

@@ -23,3 +23,27 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # Publishes the README's tests and coverage badges from master: a coverage run, then the two
+  # shields.io endpoint files force-pushed alone to the `badges` branch.
+  badges:
+    if: github.event_name == 'push'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install
+      - run: npm run coverage
+      - run: node scripts/badges.mjs
+      - name: Push the badge files to the badges branch
+        run: |
+          cd badges
+          git init -q -b badges
+          git add tests.json coverage.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q -m "badges for ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" badges
