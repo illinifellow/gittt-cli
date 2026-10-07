@@ -19,7 +19,6 @@ import { WORKING_TREE, type ViewSettings } from "@/protocol"
 import type { GlyphTokens } from "@/theme"
 import { fit, mix, slide, widthOf, type Palette } from "./text"
 import { useTheme } from "./theme"
-import { windowStart } from "./window"
 
 /**
  * @param badge a ref label
@@ -51,16 +50,10 @@ export const partColor = (part: MessagePart, palette: Palette) => ({ text: undef
 export const graphWidth = (rows: GraphRow[], columns: Config["columns"], compact = false) => columns.graph ?? Math.min(30, Math.max(4, Math.max(1, ...rows.map(row => row.width)) * (compact ? 1 : 2) + 1))
 
 /**
- * @param cursor selected row
- * @param total row count
  * @param height pane height, header included
- * @returns the first and one-past-last index of the rows the log shows
+ * @returns rows the log list has below its header
  */
-export const visibleRange = (cursor: number, total: number, height: number) => {
-  const listHeight = Math.max(1, height - 1)
-  const start = windowStart(cursor, total, listHeight, 1 / 3)
-  return { start, end: start + listHeight }
-}
+export const logListHeight = (height: number) => Math.max(1, height - 1)
 
 /**
  * @param width pane width
@@ -87,6 +80,7 @@ export interface LogEvents {
  * @param props.entries log rows from `buildLog`, working tree first when there are changes
  * @param props.rows their graph layout, same order
  * @param props.cursor index of the selected row
+ * @param props.start first visible row, from `useWindowStart` in the screen so drawing and graph width agree
  * @param props.width pane width in cells
  * @param props.height pane height in rows, header included
  * @param props.focused whether the pane has the keyboard
@@ -99,10 +93,11 @@ export interface LogEvents {
  * @param props.scrollX cells the description scrolled sideways
  * @param props.events row clicks, hash clicks, wheel and divider drags
  */
-export const LogPane = ({ entries, rows, cursor, width, height, focused, headHash, settings, columns, found, query, truncated, scrollX, events }: {
+export const LogPane = ({ entries, rows, cursor, start, width, height, focused, headHash, settings, columns, found, query, truncated, scrollX, events }: {
   entries: LogEntry[]
   rows: GraphRow[]
   cursor: number
+  start: number
   width: number
   height: number
   focused: boolean
@@ -116,9 +111,8 @@ export const LogPane = ({ entries, rows, cursor, width, height, focused, headHas
   events: LogEvents
 }) => {
   const { colors: palette, glyphs } = useTheme()
-  const { start, end } = visibleRange(cursor, entries.length, height)
-  const listHeight = end - start
-  const graph = graphWidth(rows.slice(start, end), columns, settings.compact)
+  const listHeight = logListHeight(height)
+  const graph = graphWidth(rows.slice(start, start + listHeight), columns, settings.compact)
   const description = descriptionWidth(width, graph, columns)
   const headerColumns: [string, number, LogColumn | null][] = [["Graph", graph, "graph"], ["Description", description, "description"], ["Commit", columns.hash, "hash"], ["Author", columns.author, "author"], ["Date", columns.date, null]]
   const headerGround = palette.header
