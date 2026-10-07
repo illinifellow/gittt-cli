@@ -180,4 +180,69 @@ describe("main screen", () => {
     await vi.waitFor(() => expect(screen.frame).not.toContain("whole file, esc returns"), { timeout: 3000, interval: 50 })
     close()
   })
+
+  /** Moving through the log changes the commit the details pane shows, and the filter keys relabel the bar. */
+  it("follows the selected commit and toggles the branch filter", async () => {
+    const folder = join(root, "follow")
+    makeRepository(join(folder, "repo"), { "a.txt": "a\n" })
+    writeFileSync(join(folder, "repo", "a.txt"), "b\n")
+    git(join(folder, "repo"), "commit", "-qam", "second change")
+    const { screen, press, close } = open(folder)
+    await vi.waitFor(() => expect(screen.frame).toContain("second change"), { timeout: 8000, interval: 50 })
+    const shown = () => /Commit: ([0-9a-f]{40})/.exec(screen.frame)?.[1]
+    await vi.waitFor(() => expect(shown()).toBeTruthy(), { timeout: 3000, interval: 50 })
+    const first = shown()
+    await press(KEYS.down)
+    await vi.waitFor(() => expect(shown()).not.toBe(first), { timeout: 3000, interval: 50 })
+    expect(screen.frame).toContain("All Branches")
+    await press("1")
+    await vi.waitFor(() => expect(screen.frame).toContain("Current Branch"), { timeout: 3000, interval: 50 })
+    close()
+  })
+
+  /** A toolbar key opens its dialog and Esc closes it without running anything. */
+  it("opens the fetch dialog from its key and closes it with Esc", async () => {
+    const folder = join(root, "dialog")
+    makeRepository(join(folder, "repo"), { "a.txt": "a\n" })
+    const { screen, press, close } = open(folder)
+    await vi.waitFor(() => expect(screen.frame).toContain("first"), { timeout: 8000, interval: 50 })
+    await press("f")
+    await vi.waitFor(() => expect(screen.frame).toMatch(/Fetch from all remotes|Prune/i), { timeout: 3000, interval: 50 })
+    await press(KEYS.escape)
+    await vi.waitFor(() => expect(screen.frame).not.toMatch(/Prune/i), { timeout: 3000, interval: 50 })
+    close()
+  })
+
+  /** Search dims what does not match and counts what does. */
+  it("searches the log by subject", async () => {
+    const folder = join(root, "search")
+    makeRepository(join(folder, "repo"), { "a.txt": "a\n" })
+    writeFileSync(join(folder, "repo", "a.txt"), "b\n")
+    git(join(folder, "repo"), "commit", "-qam", "polish the orbit planner")
+    const { screen, press, close } = open(folder)
+    await vi.waitFor(() => expect(screen.frame).toContain("polish the orbit planner"), { timeout: 8000, interval: 50 })
+    await press("/", "o", "r", "b", "i", "t")
+    await vi.waitFor(() => expect(screen.frame).toMatch(/orbit[^\n]* 1/), { timeout: 3000, interval: 50 })
+    close()
+  })
+
+  /** Staging a file with Space and committing it from the dialog writes a commit with exactly that file. */
+  it("stages a file and commits it from the commit dialog", async () => {
+    const folder = join(root, "commit")
+    const repo = join(folder, "repo")
+    makeRepository(repo, { "a.txt": "a\n", "b.txt": "b\n" })
+    writeFileSync(join(repo, "a.txt"), "a edit\n")
+    writeFileSync(join(repo, "b.txt"), "b edit\n")
+    const { screen, press, close } = open(folder)
+    await vi.waitFor(() => expect(screen.frame).toContain("Pending files"), { timeout: 8000, interval: 50 })
+    await press(KEYS.tab, KEYS.space)
+    await vi.waitFor(() => expect(git(repo, "diff", "--cached", "--name-only").trim()).toBe("a.txt"), { timeout: 3000, interval: 50 })
+    await press("c")
+    await vi.waitFor(() => expect(screen.frame).toMatch(/Message/i), { timeout: 3000, interval: 50 })
+    await press("e", "d", "i", "t", " ", "a", KEYS.enter)
+    await vi.waitFor(() => expect(git(repo, "log", "-1", "--format=%s").trim()).toBe("edit a"), { timeout: 5000, interval: 50 })
+    expect(git(repo, "show", "--name-only", "--format=", "HEAD").trim()).toBe("a.txt")
+    expect(git(repo, "status", "--porcelain").trim()).toBe("M b.txt")
+    close()
+  })
 })

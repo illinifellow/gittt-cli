@@ -57,3 +57,11 @@ const CONFLICT_MARKER = /^(<{7}|\|{7}|={7}|>{7})( |$)/m
  * @returns whether it still holds a conflict marker line, so marking it resolved would commit the markers
  */
 export const hasConflictMarkers = (text: string) => CONFLICT_MARKER.test(text)
+
+/**
+ * @param diff the parsed diff the line belongs to
+ * @param line one hunk line, prefix columns included
+ * @returns whether the line is a conflict marker git wrote into a conflicted file: only combined
+ *   diffs carry them, so a Markdown setext underline or any other run of `=` stays an ordinary line
+ */
+export const isConflictMarkerLine = (diff: ParsedDiff, line: string) => diff.combined && CONFLICT_MARKER.test(line.slice(prefixWidth(diff)))

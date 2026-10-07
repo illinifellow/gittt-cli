@@ -8,7 +8,7 @@
  * keeps running after the screen moved on, and a missing clipboard program
  * crashing gittt.
  */
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
@@ -138,12 +138,41 @@ describe("clipboard", () => {
     expect(written).toContain(`\x1b]52;c;${Buffer.from("hi").toString("base64")}\x07`)
   })
 
+  /** A working clipboard program receives the exact text, and the copy says it went through the program. */
+  it("hands the text to the clipboard program", async () => {
+    const bin = join(root, "bin-ok")
+    const received = join(root, "received.txt")
+    mkdirSync(bin, { recursive: true })
+    for (const name of ["pbcopy", "xclip"]) {
+      writeFileSync(join(bin, name), `#!/bin/sh\nwhile IFS= read -r line || [ -n "$line" ]; do printf '%s' "$line" >> '${received}'; done\n`)
+      chmodSync(join(bin, name), 0o755)
+    }
+    Object.assign(process.env, { PATH: bin, DISPLAY: ":0" })
+    delete process.env.WAYLAND_DISPLAY
+    delete process.env.SSH_TTY
+    delete process.env.SSH_CONNECTION
+    await expect(copyToClipboard("a1b2c3")).resolves.toBe("program")
+    expect(readFileSync(received, "utf8")).toBe("a1b2c3")
+  })
+
+  /** Over ssh the local clipboard program would copy on the wrong machine, so the terminal carries the text. */
+  it("copies through the terminal in an ssh session", async () => {
+    const written: string[] = []
+    vi.spyOn(process.stdout, "write").mockImplementation(chunk => {
+      written.push(String(chunk))
+      return true
+    })
+    process.env.SSH_CONNECTION = "10.0.0.1 22 10.0.0.2 22"
+    await expect(copyToClipboard("hash")).resolves.toBe("terminal")
+    expect(written).toContain(`\x1b]52;c;${Buffer.from("hash").toString("base64")}\x07`)
+  })
+
   /** A clipboard program that fails is reported as an error, not as "copied". */
   it("reports a clipboard program that fails", async () => {
     const bin = join(root, "bin")
     mkdirSync(bin, { recursive: true })
     for (const name of ["pbcopy", "xclip"]) {
-      writeFileSync(join(bin, name), "#!/bin/sh\necho refused >&2\nexit 3\n")
+      writeFileSync(join(bin, name), "#!/bin/sh\nwhile read -r line; do :; done\necho refused >&2\nexit 3\n")
       chmodSync(join(bin, name), 0o755)
     }
     Object.assign(process.env, { PATH: bin, DISPLAY: ":0" })

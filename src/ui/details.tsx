@@ -7,7 +7,7 @@
  * wide characters, emoji and tabs select and copy what is drawn.
  */
 import { Box, Text } from "ink"
-import { prefixWidth, type ParsedDiff } from "@/diff"
+import { isConflictMarkerLine, prefixWidth, type ParsedDiff } from "@/diff"
 import { FILE_TONES, fileRows, rowFiles, type FileRow, type FileView } from "@/files"
 import type { Badge } from "@/history"
 import type { Segment } from "@/highlight"
@@ -21,7 +21,7 @@ import type { Theme } from "@/theme"
 import { fit, mix, placeText, slide, splitCells, widthOf } from "./text"
 import { useTheme } from "./theme"
 import { CHECKBOX_WIDTH, CheckBox, type CheckState } from "./checkbox"
-import { windowStart } from "./window"
+import { useWindowStart } from "./window"
 
 /** One drawn line of the diff pane. */
 interface DiffLine {
@@ -114,7 +114,7 @@ export const diffLines = (details: CommitDetails | null, badges: Badge[], operat
     let newLine = hunk.newStart
     hunk.lines.forEach((text, lineIndex) => {
       const marks = text.slice(0, prefix)
-      const conflict = /^[+ -]{0,2}(<{7}|={7}|>{7}|\|{7})/.test(text)
+      const conflict = isConflictMarkerLine(diff.parsed, text)
       const kind = text[0] === "\\" ? "note" : conflict ? "conflict" : marks.includes("+") ? "add" : marks.includes("-") ? "remove" : "context"
       const left = kind === "add" || kind === "note" || kind === "conflict" ? "" : String(oldLine++)
       const right = kind === "remove" || kind === "note" ? "" : String(newLine++)
@@ -177,7 +177,7 @@ export const FilesPane = ({ rows, cursor, width, height, focused, view, working,
 }) => {
   const { colors: palette, glyphs, spacing } = useTheme()
   const listHeight = Math.max(1, height - 1)
-  const start = windowStart(cursor, rows.length, listHeight, 1 / 2)
+  const start = useWindowStart(cursor, rows.length, listHeight)
   const noun = working ? "Pending files" : "Files"
   const sort: Record<FileView, string> = { path: "sorted by path", status: "sorted by file status", tree: "tree view" }
   const files = rows.flatMap(row => row.kind === "file" ? [row.file] : [])
