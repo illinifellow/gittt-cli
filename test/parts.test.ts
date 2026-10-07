@@ -143,7 +143,7 @@ describe("clipboard", () => {
     const bin = join(root, "bin")
     mkdirSync(bin, { recursive: true })
     for (const name of ["pbcopy", "xclip"]) {
-      writeFileSync(join(bin, name), "#!/bin/sh\necho refused >&2\nexit 3\n")
+      writeFileSync(join(bin, name), "#!/bin/sh\nwhile read -r line; do :; done\necho refused >&2\nexit 3\n")
       chmodSync(join(bin, name), 0o755)
     }
     Object.assign(process.env, { PATH: bin, DISPLAY: ":0" })

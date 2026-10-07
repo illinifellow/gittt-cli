@@ -17,8 +17,6 @@ import { WORKING_TREE, type Repository } from "@/protocol"
 import { dialogKey, openDialogState } from "@/ui/dialog"
 import type { Key } from "ink"
 
-Object.assign(process.env, { GIT_AUTHOR_NAME: "Ada", GIT_AUTHOR_EMAIL: "ada@example.com", GIT_COMMITTER_NAME: "Ada", GIT_COMMITTER_EMAIL: "ada@example.com" })
-
 let root: string
 let repository: string
 let remote: string
