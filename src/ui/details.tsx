@@ -7,7 +7,7 @@
  * wide characters, emoji and tabs select and copy what is drawn.
  */
 import { Box, Text } from "ink"
-import { prefixWidth, type ParsedDiff } from "@/diff"
+import { isConflictMarkerLine, prefixWidth, type ParsedDiff } from "@/diff"
 import { FILE_TONES, fileRows, rowFiles, type FileRow, type FileView } from "@/files"
 import type { Badge } from "@/history"
 import type { Segment } from "@/highlight"
@@ -114,7 +114,7 @@ export const diffLines = (details: CommitDetails | null, badges: Badge[], operat
     let newLine = hunk.newStart
     hunk.lines.forEach((text, lineIndex) => {
       const marks = text.slice(0, prefix)
-      const conflict = /^[+ -]{0,2}(<{7}|={7}|>{7}|\|{7})/.test(text)
+      const conflict = isConflictMarkerLine(diff.parsed, text)
       const kind = text[0] === "\\" ? "note" : conflict ? "conflict" : marks.includes("+") ? "add" : marks.includes("-") ? "remove" : "context"
       const left = kind === "add" || kind === "note" || kind === "conflict" ? "" : String(oldLine++)
       const right = kind === "remove" || kind === "note" ? "" : String(newLine++)
