@@ -20,5 +20,16 @@ const GIT_TEST_ENVIRONMENT = {
 
 export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
-  test: { include: ["test/**/*.test.ts"], testTimeout: 30000, env: GIT_TEST_ENVIRONMENT },
+  test: {
+    include: ["test/**/*.test.ts"],
+    testTimeout: 30000,
+    env: GIT_TEST_ENVIRONMENT,
+    coverage: {
+      provider: "v8",
+      include: ["src/**"],
+      // the entry point runs in its own process, driven in a pseudo-terminal by test/cli.test.ts
+      exclude: ["src/cli.tsx"],
+      reporter: ["text-summary", "json-summary"],
+    },
+  },
 })
