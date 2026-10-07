@@ -21,7 +21,7 @@ import type { Theme } from "@/theme"
 import { fit, mix, placeText, slide, splitCells, widthOf } from "./text"
 import { useTheme } from "./theme"
 import { CHECKBOX_WIDTH, CheckBox, type CheckState } from "./checkbox"
-import { windowStart } from "./window"
+import { useWindowStart } from "./window"
 
 /** One drawn line of the diff pane. */
 interface DiffLine {
@@ -177,7 +177,7 @@ export const FilesPane = ({ rows, cursor, width, height, focused, view, working,
 }) => {
   const { colors: palette, glyphs, spacing } = useTheme()
   const listHeight = Math.max(1, height - 1)
-  const start = windowStart(cursor, rows.length, listHeight, 1 / 2)
+  const start = useWindowStart(cursor, rows.length, listHeight)
   const noun = working ? "Pending files" : "Files"
   const sort: Record<FileView, string> = { path: "sorted by path", status: "sorted by file status", tree: "tree view" }
   const files = rows.flatMap(row => row.kind === "file" ? [row.file] : [])

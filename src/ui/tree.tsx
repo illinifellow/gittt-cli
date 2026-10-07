@@ -13,7 +13,7 @@ import type { KeyBindings } from "@/config"
 import type { GlyphTokens } from "@/theme"
 import { fit, slide, widthOf, type Palette } from "./text"
 import { useTheme } from "./theme"
-import { windowStart } from "./window"
+import { useWindowStart } from "./window"
 
 /** A right-aligned extra on a row; pills sit on a tinted ground. */
 interface Meta {
@@ -195,7 +195,7 @@ export const TreePane = ({ nodes, cursor, selectedPath, width, height, focused, 
   const buttons: Record<(typeof TREE_ACTIONS)[number], [string, string]> = { add: [`${glyphs.add} Add`, keys.add], rescan: [`${glyphs.rescan} Rescan`, keys.rescan], up: [glyphs.moveUp, keys.moveUp], down: [glyphs.moveDown, keys.moveDown] }
   const showFilter = filtering || Boolean(filter)
   const listHeight = Math.max(1, height - 1 - (showFilter ? 1 : 0))
-  const start = windowStart(cursor, nodes.length, listHeight, 1 / 2)
+  const start = useWindowStart(cursor, nodes.length, listHeight)
   const visible = nodes.slice(start, start + listHeight)
   return (
     <Clickable flexDirection="column" width={width} height={height} onWheel={events.onWheel}>

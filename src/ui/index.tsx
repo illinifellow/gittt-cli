@@ -31,7 +31,8 @@ import { resolveTheme } from "@/theme"
 import { availableUpdate, installUpdate } from "@/update"
 import { DiffPane, FilesPane, diffLines, fileViewLines, filesOf, gutterWidth, lineCells, selectedText, sourceLines, type DetailsEvents, type DiffSelection } from "./details"
 import { DialogBox, dialogActivate, dialogKey, dialogLink, dialogMove, openDialogState, type DialogState } from "./dialog"
-import { LogPane, graphWidth, visibleRange, type LogColumn, type LogEvents } from "./log"
+import { useWindowStart } from "./window"
+import { LogPane, graphWidth, logListHeight, type LogColumn, type LogEvents } from "./log"
 import { MenuBox, type MenuItem, type MenuState } from "./menu"
 import { fit } from "./text"
 import { ThemeProvider } from "./theme"
@@ -604,9 +605,9 @@ export const App = ({ store, onRestart }: { store: RepositoryStore; onRestart: (
   const widestFiles = mainWidth - spacing.paneMinWidth - 1
   const filesWidth = clamp(columns.files, spacing.paneMinWidth, widestFiles)
   const current = repository?.branches.find(branch => branch.current)
-  const diffScroll = Math.max(0, Math.min(diffCursor - Math.floor(detailsHeight / 3), lines.length - detailsHeight))
-  const shownRows = visibleRange(logCursor, log.entries.length, logHeight)
-  const graph = graphWidth(log.rows.slice(shownRows.start, shownRows.end), columns, settings.compact)
+  const diffScroll = useWindowStart(diffCursor, lines.length, detailsHeight)
+  const logStart = useWindowStart(logCursor, log.entries.length, logListHeight(logHeight))
+  const graph = graphWidth(log.rows.slice(logStart, logStart + logListHeight(logHeight)), columns, settings.compact)
 
   const resizeColumn = (column: "graph" | "author" | "date" | "tree", step: number) => updateConfig(draft => {
     const change = step * spacing.resizeStep
@@ -1008,7 +1009,7 @@ export const App = ({ store, onRestart }: { store: RepositoryStore; onRestart: (
                 </Text>
               ) : null}
             </Box>
-            <LogPane entries={log.entries} rows={log.rows} cursor={logCursor} width={mainWidth} height={logHeight} focused={focus === "log"} headHash={repository?.head.hash ?? null} settings={settings} columns={columns} found={found} query={query} truncated={truncated} scrollX={scrollX.log} events={logEvents} />
+            <LogPane entries={log.entries} rows={log.rows} cursor={logCursor} start={logStart} width={mainWidth} height={logHeight} focused={focus === "log"} headHash={repository?.head.hash ?? null} settings={settings} columns={columns} found={found} query={query} truncated={truncated} scrollX={scrollX.log} events={logEvents} />
             <Clickable height={1} width={mainWidth} onPress={detailsDivider}>
               <Text color={palette.border}>{glyphs.splitter.repeat(mainWidth)}</Text>
             </Clickable>
