@@ -32,9 +32,9 @@ const PTY_DRIVER = `
 import os, pty, sys, select, struct, fcntl, termios, time
 pid, fd = pty.fork()
 if pid == 0:
+    fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
     os.execvp(sys.argv[1], sys.argv[1:])
-fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
-output, pressed, deadline = b"", False, time.time() + 20
+output, pressed, deadline = b"", False, time.time() + 15
 while time.time() < deadline:
     ready, _, _ = select.select([fd], [], [], 0.1)
     if ready:
@@ -50,8 +50,13 @@ while time.time() < deadline:
         time.sleep(0.3)
         os.write(fd, os.environ["GITTT_TEST_KEYS"].encode())
 sys.stdout.buffer.write(output)
-_, status = os.waitpid(pid, 0)
-sys.exit(os.waitstatus_to_exitcode(status))
+for _ in range(50):
+    done, status = os.waitpid(pid, os.WNOHANG)
+    if done:
+        sys.exit(os.waitstatus_to_exitcode(status))
+    time.sleep(0.1)
+os.kill(pid, 9)
+sys.exit(124)
 `
 
 /**
@@ -70,9 +75,9 @@ const runInTerminal = (keys: string) => new Promise<{ output: string; code: numb
 describe("gittt in a terminal", () => {
   it("opens on the folder prompt and gives the terminal back on Esc", async () => {
     const { output, code } = await runInTerminal("\x1b")
+    expect(code, `gittt wrote:\n${JSON.stringify(output)}`).toBe(0)
     expect(output).toContain(ALTERNATE_SCREEN.enter)
     expect(output).toContain(config)
-    expect(code).toBe(0)
     expect(output.lastIndexOf(ALTERNATE_SCREEN.leave)).toBeGreaterThan(output.lastIndexOf(ALTERNATE_SCREEN.enter))
     expect(output).toContain(RESTORE_TITLE)
   })
